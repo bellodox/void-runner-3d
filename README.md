@@ -18,7 +18,7 @@
 3. Start the relay with `node leaderboard-relay.js` to expose the blockchain leaderboard endpoints on `127.0.0.1:8787` (`package.json:5-8`).
 4. Open `index.html` in a current browser (Chrome, Firefox, Safari, Edge, or mobile equivalents) served through a static host or `file://` URI to experience the game client.
 5. Make sure you have a local SpaceXpanse ROD node running at `127.0.0.1:11999`, so the relay can fulfill leaderboard requests via JSON-RPC.
-6. Ensure the relay has access to the SpaceXpanse ROD node to the JSON-RPC server at `127.0.0.1:11999` with proper credentials configured in `spacexpanse.conf` and the .env file.
+6. Ensure the relay has access to the SpaceXpanse ROD node through the JSON-RPC server at `127.0.0.1:11999` with proper credentials configured in `spacexpanse.conf` and the .env file.
 
 ## Usage Guidelines
 - At launch, navigate the menu to select Easy, Normal, or Hard difficulty, then tap Start to begin the asteroid-dodging run.
