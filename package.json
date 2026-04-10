@@ -1,0 +1,12 @@
+{
+  "name": "void-runner-3d-relay",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local relay for Void Runner 3D blockchain leaderboard",
+  "scripts": {
+    "relay": "node leaderboard-relay.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

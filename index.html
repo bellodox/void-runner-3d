@@ -120,6 +120,72 @@
       padding: 12px 22px;
     }
 
+    .chain-board {
+      margin-top: 18px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      padding: 12px;
+      text-align: left;
+    }
+
+    .chain-board h2 {
+      margin: 0 0 8px;
+      font-size: 0.9rem;
+      color: #c9ecff;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .status-line {
+      margin: 0 0 8px;
+      color: #9cc8e2;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+    }
+
+    .chain-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 5px;
+      min-height: 96px;
+      font-size: 0.8rem;
+      color: #dcefff;
+    }
+
+    .chain-list li {
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      gap: 8px;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(121, 215, 255, 0.15);
+    }
+
+    .chain-list li:last-child {
+      border-bottom: none;
+    }
+
+    .chain-submit {
+      margin: 12px 0 14px;
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .initials-input {
+      background: rgba(8, 16, 30, 0.9);
+      border: 1px solid rgba(121, 215, 255, 0.45);
+      color: #e8f7ff;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: inherit;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
     .game-over-title {
       color: #ffd2d2;
       text-shadow: 0 0 10px #ff7d7d, 0 0 24px rgba(255, 80, 80, 0.55);
@@ -129,6 +195,10 @@
       opacity: 0;
       pointer-events: none !important;
       transform: translateY(8px);
+    }
+
+    .hidden * {
+      pointer-events: none !important;
     }
 
     #hud {
@@ -261,6 +331,12 @@
         <button class="difficulty-btn" data-difficulty="hard">Hard</button>
       </div>
       <button id="startBtn" class="action-btn">Start Game</button>
+
+      <div class="chain-board">
+        <h2 id="chainTitle">Chain Leaderboard (Normal)</h2>
+        <p id="chainStatusText" class="status-line">Relay status: checking...</p>
+        <ol id="chainLeaderboardList" class="chain-list"></ol>
+      </div>
     </div>
   </div>
 
@@ -268,7 +344,12 @@
     <div class="panel">
       <h1 class="game-over-title">Game Over</h1>
       <p id="finalScoreText" class="subtitle">Final Time: 00:00.000</p>
-      <p id="recordText" class="subtitle">Best Time: 00:00.000</p>
+      <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
+      <div class="chain-submit">
+        <input id="playerInitialsInput" class="initials-input" type="text" maxlength="6" value="AAA" autocomplete="off" spellcheck="false" />
+        <button id="submitChainScoreBtn" class="action-btn">Submit to Chain</button>
+      </div>
+      <p id="submitChainStatusText" class="status-line">Chain submission status: idle</p>
       <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
         <button id="playAgainBtn" class="action-btn">Play Again</button>
         <button id="mainMenuBtn" class="action-btn">Main Menu</button>
@@ -332,6 +413,19 @@
       const muteBtn = document.getElementById("muteBtn");
       const mouseToggleBtn = document.getElementById("mouseToggleBtn");
       const difficultyButtons = Array.from(document.querySelectorAll(".difficulty-btn"));
+      const chainTitle = document.getElementById("chainTitle");
+      const chainStatusText = document.getElementById("chainStatusText");
+      const chainLeaderboardList = document.getElementById("chainLeaderboardList");
+      const playerInitialsInput = document.getElementById("playerInitialsInput");
+      const submitChainScoreBtn = document.getElementById("submitChainScoreBtn");
+      const submitChainStatusText = document.getElementById("submitChainStatusText");
+
+      const RELAY_BASE_URL = "http://127.0.0.1:8787/api";
+      const PLAYER_NAME_STORAGE_KEY = "voidrunner_player_initials";
+      const allowedDifficultyKeys = new Set(["easy", "normal", "hard"]);
+
+      let lastFinalScore = 0;
+      let chainEntries = [];
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -758,6 +852,103 @@
         const ss = String(secs).padStart(2, "0");
         const ms = String(millis).padStart(3, "0");
         return `${mm}:${ss}.${ms}`;
+      }
+
+      function sanitizeInitials(rawValue) {
+        return String(rawValue || "")
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "")
+          .slice(0, 6);
+      }
+
+      function readStoredInitials() {
+        const storedValue = localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || "AAA";
+        const initials = sanitizeInitials(storedValue);
+        return initials || "AAA";
+      }
+
+      function setChainStatus(text, color) {
+        chainStatusText.textContent = `Relay status: ${text}`;
+        chainStatusText.style.color = color;
+      }
+
+      function setSubmitStatus(text, color) {
+        submitChainStatusText.textContent = `Chain submission status: ${text}`;
+        submitChainStatusText.style.color = color;
+      }
+
+      function renderChainLeaderboard() {
+        chainTitle.textContent = `Chain Leaderboard (${DIFFICULTY[selectedDifficulty].label})`;
+        chainLeaderboardList.innerHTML = "";
+
+        if (!chainEntries.length) {
+          const emptyRow = document.createElement("li");
+          emptyRow.innerHTML = "<span>#--</span><span>NO ENTRIES</span><span>00:00.000</span>";
+          chainLeaderboardList.appendChild(emptyRow);
+          return;
+        }
+
+        for (const entry of chainEntries) {
+          const row = document.createElement("li");
+          row.innerHTML = `<span>#${entry.rank}</span><span>${entry.name}</span><span>${formatTime(entry.score)}</span>`;
+          chainLeaderboardList.appendChild(row);
+        }
+      }
+
+      async function loadChainLeaderboard() {
+        if (!allowedDifficultyKeys.has(selectedDifficulty)) return;
+        setChainStatus("loading leaderboard...", "#a6c6dd");
+
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/leaderboard?difficulty=${selectedDifficulty}`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          chainEntries = Array.isArray(payload.entries) ? payload.entries : [];
+          setChainStatus("online", "#65f5a8");
+        } catch {
+          chainEntries = [];
+          setChainStatus("offline (relay or node unavailable)", "#ffb0b0");
+        }
+
+        renderChainLeaderboard();
+      }
+
+      async function submitScoreToChain() {
+        const playerName = sanitizeInitials(playerInitialsInput.value);
+        playerInitialsInput.value = playerName;
+
+        if (!playerName) {
+          setSubmitStatus("enter initials (A-Z0-9)", "#ffb0b0");
+          return;
+        }
+
+        submitChainScoreBtn.disabled = true;
+        setSubmitStatus("submitting...", "#a6c6dd");
+
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/leaderboard/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              difficulty: selectedDifficulty,
+              name: playerName,
+              score: lastFinalScore
+            })
+          });
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          chainEntries = Array.isArray(payload.entries) ? payload.entries : [];
+          localStorage.setItem(PLAYER_NAME_STORAGE_KEY, playerName);
+          setChainStatus("online", "#65f5a8");
+          setSubmitStatus("submitted", "#65f5a8");
+          renderChainLeaderboard();
+        } catch {
+          setSubmitStatus("failed (relay or node unavailable)", "#ffb0b0");
+          setChainStatus("offline (relay or node unavailable)", "#ffb0b0");
+        } finally {
+          submitChainScoreBtn.disabled = false;
+        }
       }
 
       function getHighScoreKey() {
@@ -1263,7 +1454,7 @@
 
       function updateHud() {
         timerBox.textContent = `TIME ${formatTime(survivalTime)}`;
-        highScoreBox.textContent = `BEST ${formatTime(highScore)}`;
+        highScoreBox.textContent = `LOCAL BEST ${formatTime(highScore)}`;
         difficultyLabel.textContent = `DIFF: ${DIFFICULTY[selectedDifficulty].label}`;
       }
 
@@ -1275,6 +1466,7 @@
         }
         loadHighScore();
         updateHud();
+        loadChainLeaderboard();
       }
 
       function showMenu() {
@@ -1305,10 +1497,14 @@
 
       function showGameOverScreen() {
         const isNewRecord = saveHighScoreIfNeeded();
+        lastFinalScore = survivalTime;
         finalScoreText.textContent = `Final Time: ${formatTime(survivalTime)}`;
-        recordText.textContent = `${isNewRecord ? "NEW RECORD! " : "Best Time: "}${formatTime(highScore)}`;
+        recordText.textContent = `${isNewRecord ? "NEW LOCAL RECORD! " : "Local Best Time: "}${formatTime(highScore)}`;
         recordText.style.color = isNewRecord ? "#8cffbf" : "#a6c6dd";
+        playerInitialsInput.value = readStoredInitials();
+        setSubmitStatus("idle", "#9cc8e2");
         gameOverOverlay.classList.remove("hidden");
+        loadChainLeaderboard();
       }
 
       function togglePause() {
@@ -1389,6 +1585,15 @@
         startBtn.addEventListener("click", () => startGame());
         playAgainBtn.addEventListener("click", () => startGame());
         mainMenuBtn.addEventListener("click", () => showMenu());
+        submitChainScoreBtn.addEventListener("click", () => submitScoreToChain());
+
+        playerInitialsInput.addEventListener("input", () => {
+          playerInitialsInput.value = sanitizeInitials(playerInitialsInput.value);
+        });
+
+        playerInitialsInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") submitScoreToChain();
+        });
 
         pauseBtn.addEventListener("click", () => {
           if (gameState === STATE.PLAYING || gameState === STATE.PAUSED) togglePause();
@@ -1412,6 +1617,8 @@
 
       setSelectedDifficulty("normal");
       showMenu();
+      playerInitialsInput.value = readStoredInitials();
+      setSubmitStatus("idle", "#9cc8e2");
 
       let lastTime = performance.now();
 
@@ -1434,7 +1641,6 @@
           } else if (gameState === STATE.GAME_OVER) {
             updateStars(deltaSeconds * 0.8);
             updateShipFragments(deltaSeconds);
-            updateParticles(deltaSeconds);
 
             if (cameraShakeTimer > 0) {
               cameraShakeTimer = Math.max(0, cameraShakeTimer - rawDelta);
