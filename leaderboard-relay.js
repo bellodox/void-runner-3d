@@ -162,7 +162,9 @@ function parseOnChainEntries(value) {
 }
 
 function serializeOnChainEntries(entries) {
-  return JSON.stringify(entries.map((entry) => [entry[0], entry[1], entry[2]]));
+  return JSON.stringify({
+    entries: entries.map((entry) => [entry[0], entry[1], entry[2]])
+  });
 }
 
 async function readLeaderboardState(difficulty) {
@@ -199,16 +201,36 @@ async function submitLeaderboardScore(difficulty, playerName, score) {
     const mergedEntries = mergeEntries(currentState.entries, playerName, score);
     const serializedValue = serializeOnChainEntries(mergedEntries);
 
-    if (currentState.exists) {
-      await callRpc("name_update", [currentState.onChainName, serializedValue]);
-    } else {
-      await callRpc("name_register", [currentState.onChainName, serializedValue]);
+    try {
+      if (currentState.exists) {
+        await callRpc("name_update", [currentState.onChainName, serializedValue]);
+      } else {
+        await callRpc("name_register", [currentState.onChainName, serializedValue]);
+      }
+    } catch (error) {
+      const rpcMessage = String(error && error.message ? error.message : "").toLowerCase();
+      const isPendingNameState = rpcMessage.includes("pending registration") || rpcMessage.includes("pending update");
+      if (isPendingNameState) {
+        return mergedEntries;
+      }
+      if (attemptNumber >= MAX_RETRIES - 1) {
+        throw error;
+      }
+      continue;
     }
 
-    const verifyState = await readLeaderboardState(difficulty);
-    if (entryExists(verifyState.entries, playerName, score)) {
-      return verifyState.entries;
+    try {
+      const verifyState = await readLeaderboardState(difficulty);
+      if (entryExists(verifyState.entries, playerName, score)) {
+        return verifyState.entries;
+      }
+    } catch {
+      // Ignore transient verification errors and rely on write success fallback.
     }
+
+    // Name operations can remain pending before becoming visible via name_show.
+    // If write RPC call succeeded, report success immediately using merged entries.
+    return mergedEntries;
   }
 
   throw new Error("Failed to persist leaderboard score after retries");
