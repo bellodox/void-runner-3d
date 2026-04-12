@@ -175,6 +175,14 @@
       align-items: center;
     }
 
+    .lock-indicator {
+      margin-top: 4px;
+      color: #ffc857;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-align: left;
+    }
+
     .initials-input {
       background: rgba(8, 16, 30, 0.9);
       border: 1px solid rgba(121, 215, 255, 0.45);
@@ -350,6 +358,7 @@
         <button id="registerChainPlayerBtn" class="action-btn">Register</button>
         <button id="submitChainScoreBtn" class="action-btn">Submit to Chain</button>
       </div>
+      <div id="handleLockIndicator" class="lock-indicator" style="display:none;">Handle locked after registration</div>
       <p id="submitChainStatusText" class="status-line">Chain submission status: idle</p>
       <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
         <button id="playAgainBtn" class="action-btn">Play Again</button>
@@ -424,12 +433,12 @@
 
       const RELAY_BASE_URL = "http://127.0.0.1:8787/api";
       const PLAYER_HANDLE_STORAGE_KEY = "voidrunner_player_handle";
-      const PLAYER_DISPLAY_NAME_STORAGE_KEY = "voidrunner_player_display_name";
       const allowedDifficultyKeys = new Set(["easy", "normal", "hard"]);
 
       let lastFinalScore = 0;
       let chainEntries = [];
       let registeredPlayerHandle = "";
+      let lockedHandle = "";
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -858,13 +867,6 @@
         return `${mm}:${ss}.${ms}`;
       }
 
-      function sanitizeInitials(rawValue) {
-        return String(rawValue || "")
-          .toUpperCase()
-          .replace(/[^A-Z0-9]/g, "")
-          .slice(0, 6);
-      }
-
       function sanitizeHandle(rawValue) {
         return String(rawValue || "")
           .toLowerCase()
@@ -879,12 +881,6 @@
         return handle || "pilot01";
       }
 
-      function getDisplayNameFromHandle(handle) {
-        const storedDisplayName = sanitizeInitials(localStorage.getItem(PLAYER_DISPLAY_NAME_STORAGE_KEY) || "");
-        if (storedDisplayName) return storedDisplayName;
-        return sanitizeInitials(handle) || "PLAYER";
-      }
-
       function setChainStatus(text, color) {
         chainStatusText.textContent = `Relay status: ${text}`;
         chainStatusText.style.color = color;
@@ -896,11 +892,32 @@
       }
 
       function updateSubmitButtonState() {
-        submitChainScoreBtn.disabled = !registeredPlayerHandle;
+        const hasValidScore = Number.isFinite(lastFinalScore) && lastFinalScore > 0;
+        const shouldShowSubmit = Boolean(registeredPlayerHandle);
+        submitChainScoreBtn.style.display = shouldShowSubmit ? "inline-block" : "none";
+        submitChainScoreBtn.disabled = !shouldShowSubmit || !hasValidScore;
+        submitChainScoreBtn.textContent = hasValidScore ? "Submit to Chain" : "Submit to Chain";
       }
 
       function applyPlayerStatus(player) {
         registeredPlayerHandle = player && player.canSubmit ? player.handle : "";
+        if (registeredPlayerHandle) {
+          lockedHandle = registeredPlayerHandle;
+          playerInitialsInput.value = registeredPlayerHandle;
+          playerInitialsInput.disabled = true;
+          playerInitialsInput.title = "Handle locked after registration";
+          registerChainPlayerBtn.style.display = "none";
+          submitChainScoreBtn.style.display = "inline-block";
+          const lockIndicator = document.getElementById("handleLockIndicator");
+          if (lockIndicator) lockIndicator.style.display = "block";
+        } else {
+          playerInitialsInput.disabled = false;
+          playerInitialsInput.title = "";
+          registerChainPlayerBtn.style.display = "inline-block";
+          submitChainScoreBtn.style.display = "none";
+          const lockIndicator = document.getElementById("handleLockIndicator");
+          if (lockIndicator) lockIndicator.style.display = "none";
+        }
         updateSubmitButtonState();
       }
 
@@ -917,7 +934,8 @@
 
         for (const entry of chainEntries) {
           const row = document.createElement("li");
-          row.innerHTML = `<span>#${entry.rank}</span><span>${entry.name}</span><span>${formatTime(entry.score)}</span>`;
+          const label = entry.handle || entry.name || "--";
+          row.innerHTML = `<span>#${entry.rank}</span><span>${label}</span><span>${formatTime(entry.score)}</span>`;
           chainLeaderboardList.appendChild(row);
         }
       }
@@ -975,15 +993,20 @@
           return;
         }
 
+        if (lockedHandle && lockedHandle !== handle) {
+          setSubmitStatus("handle locked after registration", "#ffb0b0");
+          playerInitialsInput.value = lockedHandle;
+          return;
+        }
+
         registerChainPlayerBtn.disabled = true;
         setSubmitStatus("registering player...", "#a6c6dd");
 
         try {
-          const displayName = getDisplayNameFromHandle(handle);
           const response = await fetch(`${RELAY_BASE_URL}/player/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ handle, displayName })
+            body: JSON.stringify({ handle })
           });
 
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -991,7 +1014,6 @@
           const player = payload && payload.player ? payload.player : null;
 
           localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
-          localStorage.setItem(PLAYER_DISPLAY_NAME_STORAGE_KEY, displayName);
           applyPlayerStatus(player);
           setSubmitStatus(`registered as p/${handle}`, "#65f5a8");
         } catch {
@@ -1016,18 +1038,21 @@
           return;
         }
 
+        if (!Number.isFinite(lastFinalScore) || lastFinalScore <= 0) {
+          setSubmitStatus("no valid score to submit", "#ffb0b0");
+          return;
+        }
+
         submitChainScoreBtn.disabled = true;
         setSubmitStatus("submitting...", "#a6c6dd");
 
         try {
-          const displayName = getDisplayNameFromHandle(handle);
           const response = await fetch(`${RELAY_BASE_URL}/leaderboard/submit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               difficulty: selectedDifficulty,
               handle,
-              displayName,
               score: lastFinalScore
             })
           });
@@ -1036,7 +1061,6 @@
           const payload = await response.json();
           chainEntries = Array.isArray(payload.entries) ? payload.entries : [];
           localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
-          localStorage.setItem(PLAYER_DISPLAY_NAME_STORAGE_KEY, displayName);
           applyPlayerStatus(payload.player || null);
           setChainStatus("online", "#65f5a8");
           setSubmitStatus("submitted", "#65f5a8");
@@ -1600,8 +1624,15 @@
         recordText.textContent = `${isNewRecord ? "NEW LOCAL RECORD! " : "Local Best Time: "}${formatTime(highScore)}`;
         recordText.style.color = isNewRecord ? "#8cffbf" : "#a6c6dd";
         playerInitialsInput.value = readStoredHandle();
+        if (lockedHandle) {
+          playerInitialsInput.value = lockedHandle;
+        }
         setSubmitStatus("checking registration...", "#a6c6dd");
         gameOverOverlay.classList.remove("hidden");
+        registerChainPlayerBtn.style.display = "inline-block";
+        submitChainScoreBtn.style.display = "none";
+        const lockIndicator = document.getElementById("handleLockIndicator");
+        if (lockIndicator) lockIndicator.style.display = lockedHandle ? "block" : "none";
         loadChainLeaderboard();
         refreshPlayerStatus();
       }
@@ -1689,8 +1720,12 @@
 
         playerInitialsInput.addEventListener("input", () => {
           playerInitialsInput.value = sanitizeHandle(playerInitialsInput.value);
-          registeredPlayerHandle = "";
-          updateSubmitButtonState();
+          if (!lockedHandle) {
+            registeredPlayerHandle = "";
+            updateSubmitButtonState();
+          } else {
+            playerInitialsInput.value = lockedHandle;
+          }
         });
 
         playerInitialsInput.addEventListener("keydown", (event) => {

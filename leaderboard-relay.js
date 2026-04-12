@@ -37,7 +37,6 @@ const RELAY_PORT = 8787;
 const RPC_URL = "http://127.0.0.1:11999/";
 const MAX_ENTRIES = 10;
 const MAX_RETRIES = 3;
-const MAX_DISPLAY_NAME_LENGTH = 6;
 const MIN_HANDLE_LENGTH = 3;
 const MAX_HANDLE_LENGTH = 24;
 const MAX_SCORE_SECONDS = 86400;
@@ -120,13 +119,6 @@ function sanitizeDifficulty(difficulty) {
   return Object.prototype.hasOwnProperty.call(difficultyKeys, difficulty) ? difficulty : null;
 }
 
-function sanitizeDisplayName(rawName) {
-  if (typeof rawName !== "string") return null;
-  const normalizedName = rawName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_DISPLAY_NAME_LENGTH);
-  if (!normalizedName || normalizedName.length > MAX_DISPLAY_NAME_LENGTH) return null;
-  return normalizedName;
-}
-
 function sanitizeHandle(rawHandle) {
   if (typeof rawHandle !== "string") return null;
   const normalizedHandle = rawHandle.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
@@ -180,11 +172,9 @@ function parseRecordValue(value, expectedHandle) {
     }
 
     const timestampValue = Number(rawScoreEntry.updatedAt) || 0;
-    const storedDisplayName = sanitizeDisplayName(rawScoreEntry.displayName);
     normalizedScores[difficulty] = {
       score: scoreValue,
-      updatedAt: timestampValue,
-      displayName: storedDisplayName || storedHandle.toUpperCase()
+      updatedAt: timestampValue
     };
   }
 
@@ -201,8 +191,7 @@ function serializeRecordValue(handle, scoresByDifficulty) {
     if (!scoreEntry) continue;
     persistedScores[difficulty] = {
       score: scoreEntry.score,
-      updatedAt: scoreEntry.updatedAt,
-      displayName: scoreEntry.displayName
+      updatedAt: scoreEntry.updatedAt
     };
   }
 
@@ -238,7 +227,7 @@ async function ensureNameRegistered(name, fallbackValue) {
   }
 }
 
-async function registerPlayerHandle(handle, displayName) {
+async function registerPlayerHandle(handle) {
   const identityName = getIdentityNameForHandle(handle);
   const recordName = getRecordNameForHandle(handle);
 
@@ -252,8 +241,7 @@ async function registerPlayerHandle(handle, displayName) {
     version: 1,
     game: "voidrunner3d",
     handle,
-    recordName,
-    displayName
+    recordName
   });
 
   await ensureNameRegistered(identityName, identityValue);
@@ -284,7 +272,7 @@ async function readPlayerStatus(handle) {
   };
 }
 
-async function submitLeaderboardScore(handle, difficulty, score, displayName) {
+async function submitLeaderboardScore(handle, difficulty, score) {
   const recordName = getRecordNameForHandle(handle);
 
   for (let attemptNumber = 0; attemptNumber < MAX_RETRIES; attemptNumber++) {
@@ -310,8 +298,7 @@ async function submitLeaderboardScore(handle, difficulty, score, displayName) {
     if (!existingDifficultyScore || score >= existingDifficultyScore.score) {
       nextScores[difficulty] = {
         score,
-        updatedAt: nowTimestamp,
-        displayName
+        updatedAt: nowTimestamp
       };
     }
 
@@ -397,7 +384,6 @@ async function getLeaderboardEntriesForDifficulty(difficulty) {
 
     candidateEntries.push({
       handle: handleFromName,
-      name: selectedDifficultyScore.displayName || handleFromName.toUpperCase(),
       score: selectedDifficultyScore.score,
       updatedAt: selectedDifficultyScore.updatedAt || 0
     });
@@ -411,7 +397,6 @@ async function getLeaderboardEntriesForDifficulty(difficulty) {
   return candidateEntries.slice(0, MAX_ENTRIES).map((entry, index) => ({
     rank: index + 1,
     handle: entry.handle,
-    name: entry.name,
     score: entry.score
   }));
 }
@@ -423,8 +408,7 @@ function toApiPlayerStatus(status) {
     scores[difficulty] = scoreEntry
       ? {
           score: scoreEntry.score,
-          updatedAt: scoreEntry.updatedAt,
-          displayName: scoreEntry.displayName
+          updatedAt: scoreEntry.updatedAt
         }
       : null;
   }
@@ -514,13 +498,22 @@ const server = http.createServer(async (request, response) => {
       }
 
       const handle = sanitizeHandle(parsedBody.handle);
-      const displayName = sanitizeDisplayName(parsedBody.displayName || parsedBody.handle || "");
       if (!handle) {
         sendJson(response, 400, { ok: false, error: "Invalid handle" });
         return;
       }
 
-      await registerPlayerHandle(handle, displayName || handle.toUpperCase());
+      const existingStatus = await readPlayerStatus(handle);
+      if (existingStatus.identityRegistered || existingStatus.recordRegistered) {
+        sendJson(response, 409, {
+          ok: false,
+          error: "Handle already registered",
+          player: toApiPlayerStatus(existingStatus)
+        });
+        return;
+      }
+
+      await registerPlayerHandle(handle);
       const playerStatus = await readPlayerStatus(handle);
       sendJson(response, 200, {
         ok: true,
@@ -541,11 +534,10 @@ const server = http.createServer(async (request, response) => {
 
       const difficulty = sanitizeDifficulty(String(parsedBody.difficulty || "").toLowerCase());
       const handle = sanitizeHandle(parsedBody.handle);
-      const displayName = sanitizeDisplayName(parsedBody.displayName || parsedBody.name || parsedBody.handle || "");
       const score = sanitizeScore(parsedBody.score);
 
-      if (!difficulty || !handle || !displayName || score === null) {
-        sendJson(response, 400, { ok: false, error: "Invalid difficulty, handle, display name, or score" });
+      if (!difficulty || !handle || score === null) {
+        sendJson(response, 400, { ok: false, error: "Invalid difficulty, handle, or score" });
         return;
       }
 
@@ -555,7 +547,7 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      await submitLeaderboardScore(handle, difficulty, score, displayName);
+      await submitLeaderboardScore(handle, difficulty, score);
       const updatedEntries = await getLeaderboardEntriesForDifficulty(difficulty);
       sendJson(response, 200, {
         ok: true,
