@@ -1,21 +1,17 @@
 "use strict";
 
 /**
- * HTTP endpoint tests for leaderboard-relay.js
- * Starts the relay server on a different port to avoid conflicts,
- * then tests all endpoints.  Since there is no ROD node running,
- * RPC-dependent routes should return 502; routing/validation errors
- * should return 400/404 with the correct JSON shapes.
+ * HTTP endpoint tests for leaderboard-relay.js.
+ * Runs the relay on a test port and replaces RPC fetch calls with an
+ * in-memory name service so endpoint behavior can be tested deterministically.
  */
 
 const http = require("http");
 const { spawn } = require("child_process");
 const path = require("path");
 
-const TEST_PORT = 8788; // separate from the real relay port 8787
+const TEST_PORT = 8788;
 const BASE = `http://127.0.0.1:${TEST_PORT}/api`;
-
-// ---- helpers ----
 
 function request(method, urlPath, body) {
   return new Promise((resolve, reject) => {
@@ -42,17 +38,76 @@ function request(method, urlPath, body) {
   });
 }
 
-// ---- start a patched relay on TEST_PORT via env var ----
-
 let relayProc = null;
 
-async function startRelay() {
+async function startRelay(initialStore = {}) {
   return new Promise((resolve, reject) => {
-    // We patch port via a tiny wrapper script written inline
+    const serializedStore = JSON.stringify(initialStore).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    const relayPath = path.join(__dirname, "leaderboard-relay.js").replace(/\\/g, "\\\\");
     const wrapperCode = `
-      process.env._RELAY_PORT_OVERRIDE = "${TEST_PORT}";
-      // Monkey-patch http.createServer to listen on TEST_PORT
-      const origHttp = require("http");
+      const initialEntries = JSON.parse('${serializedStore}');
+      const state = new Map(Object.entries(initialEntries));
+
+      function buildJsonResponse(payload, status = 200) {
+        return {
+          ok: status >= 200 && status < 300,
+          status,
+          async json() {
+            return payload;
+          }
+        };
+      }
+
+      global.fetch = async (_url, options = {}) => {
+        const rpcRequest = JSON.parse(options.body || '{}');
+        const params = Array.isArray(rpcRequest.params) ? rpcRequest.params : [];
+
+        if (rpcRequest.method === 'getblockcount') {
+          return buildJsonResponse({ result: 12345 });
+        }
+
+        if (rpcRequest.method === 'name_show') {
+          const targetName = params[0];
+          if (!state.has(targetName)) {
+            return buildJsonResponse({ error: { code: -4, message: 'name not found' } });
+          }
+          return buildJsonResponse({ result: { name: targetName, value: state.get(targetName) } });
+        }
+
+        if (rpcRequest.method === 'name_register') {
+          const targetName = params[0];
+          const targetValue = params[1];
+          if (!state.has(targetName)) {
+            state.set(targetName, targetValue);
+          }
+          return buildJsonResponse({ result: 'registered' });
+        }
+
+        if (rpcRequest.method === 'name_update') {
+          const targetName = params[0];
+          const targetValue = params[1];
+          if (!state.has(targetName)) {
+            return buildJsonResponse({ error: { code: -4, message: 'name not found' } });
+          }
+          state.set(targetName, targetValue);
+          return buildJsonResponse({ result: 'updated' });
+        }
+
+        if (rpcRequest.method === 'name_scan') {
+          const cursor = String(params[0] || '');
+          const pageSize = Number(params[1]) || 100;
+          const rows = Array.from(state.entries())
+            .map(([name, value]) => ({ name, value }))
+            .sort((leftRow, rightRow) => leftRow.name.localeCompare(rightRow.name))
+            .filter((row) => row.name >= cursor)
+            .slice(0, pageSize);
+          return buildJsonResponse({ result: rows });
+        }
+
+        return buildJsonResponse({ error: { code: -32601, message: 'Unknown RPC method' } });
+      };
+
+      const origHttp = require('http');
       const origCreate = origHttp.createServer.bind(origHttp);
       origHttp.createServer = (...args) => {
         const srv = origCreate(...args);
@@ -60,7 +115,8 @@ async function startRelay() {
         srv.listen = (_port, _host, cb) => origListen(${TEST_PORT}, _host, cb);
         return srv;
       };
-      require("${path.join(__dirname, "leaderboard-relay.js").replace(/\\/g, "\\\\")}");
+
+      require('${relayPath}');
     `;
 
     relayProc = spawn(process.execPath, ["-e", wrapperCode], {
@@ -79,7 +135,6 @@ async function startRelay() {
 
     setTimeout(() => {
       if (!started) {
-        // Give it a moment in case stdout buffered
         started = true;
         resolve();
       }
@@ -94,7 +149,36 @@ function stopRelay() {
   }
 }
 
-// ---- test runner ----
+async function waitForRelay(maxMs = 3000) {
+  const startTime = Date.now();
+  while (Date.now() - startTime < maxMs) {
+    try {
+      await request("GET", "/health");
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+}
+
+function createRecordValue(handle, scoresByDifficulty) {
+  return JSON.stringify({
+    version: 1,
+    game: "voidrunner3d",
+    handle,
+    scores: scoresByDifficulty
+  });
+}
+
+async function withRelay(initialStore, testBlock) {
+  await startRelay(initialStore);
+  await waitForRelay();
+  try {
+    await testBlock();
+  } finally {
+    stopRelay();
+  }
+}
 
 let passed = 0;
 let failed = 0;
@@ -108,110 +192,233 @@ function assert(desc, condition, extra = "") {
     failed++;
   }
 }
-function section(t) { console.log(`\n── ${t}`); }
 
-// ---- wait for relay to be ready ----
-async function waitForRelay(maxMs = 3000) {
-  const start = Date.now();
-  while (Date.now() - start < maxMs) {
-    try {
-      await request("GET", "/health");
-      return;
-    } catch {
-      await new Promise(r => setTimeout(r, 150));
-    }
-  }
+function section(title) {
+  console.log(`\n── ${title}`);
 }
 
-// ---- tests ----
-
 async function runTests() {
-  await startRelay();
-  await waitForRelay();
-
-  // OPTIONS preflight
   section("CORS preflight OPTIONS");
-  {
+  await withRelay({}, async () => {
     const res = await request("OPTIONS", "/health");
     assert("OPTIONS /api/health returns 204", res.status === 204, `got ${res.status}`);
-  }
+  });
 
-  // GET /api/health — ROD node is not running, should be 502
   section("GET /api/health");
-  {
+  await withRelay({}, async () => {
     const res = await request("GET", "/health");
-    assert("returns 502 when ROD node unavailable", res.status === 502, `got ${res.status}`);
-    assert("body has ok:false", res.body && res.body.ok === false, JSON.stringify(res.body));
-    assert("body has error string", typeof res.body?.error === "string");
-  }
+    assert("health returns 200 when RPC probe succeeds", res.status === 200, `got ${res.status}`);
+    assert("health body ok is true", res.body?.ok === true, JSON.stringify(res.body));
+    assert("health reports relay up", res.body?.relay === "up", JSON.stringify(res.body));
+    assert("health reports node up", res.body?.node === "up", JSON.stringify(res.body));
+  });
 
-  // GET /api/leaderboard — validation
   section("GET /api/leaderboard - validation");
-  {
-    const res = await request("GET", "/leaderboard");
-    assert("missing difficulty → 400", res.status === 400, `got ${res.status}`);
-    assert("error message present", typeof res.body?.error === "string");
-  }
-  {
-    const res = await request("GET", "/leaderboard?difficulty=ultra");
-    assert("invalid difficulty → 400", res.status === 400, `got ${res.status}`);
-  }
+  await withRelay({}, async () => {
+    const missingDifficultyResponse = await request("GET", "/leaderboard");
+    assert("missing difficulty returns 400", missingDifficultyResponse.status === 400, `got ${missingDifficultyResponse.status}`);
+    assert("missing difficulty returns explicit error text", typeof missingDifficultyResponse.body?.error === "string");
 
-  // GET /api/leaderboard — valid difficulty (no ROD → 502)
-  section("GET /api/leaderboard - valid difficulty, no ROD");
-  for (const diff of ["easy", "normal", "hard"]) {
-    const res = await request("GET", `/leaderboard?difficulty=${diff}`);
-    assert(`difficulty=${diff} → 502 (no ROD)`, res.status === 502, `got ${res.status} for ${diff}`);
-    assert(`difficulty=${diff} body.ok false`, res.body?.ok === false);
-  }
+    const invalidDifficultyResponse = await request("GET", "/leaderboard?difficulty=ultra");
+    assert("invalid difficulty returns 400", invalidDifficultyResponse.status === 400, `got ${invalidDifficultyResponse.status}`);
+  });
 
-  // POST /api/leaderboard/submit — validation
-  section("POST /api/leaderboard/submit - validation");
-  {
-    const res = await request("POST", "/leaderboard/submit", {});
-    assert("empty body → 400", res.status === 400, `got ${res.status}`);
-    assert("error message present", typeof res.body?.error === "string");
-  }
-  {
-    const res = await request("POST", "/leaderboard/submit", { difficulty: "normal", name: "!!!", score: 10 });
-    assert("invalid name → 400", res.status === 400, `got ${res.status}`);
-  }
-  {
-    const res = await request("POST", "/leaderboard/submit", { difficulty: "normal", name: "AAA", score: -5 });
-    assert("negative score → 400", res.status === 400, `got ${res.status}`);
-  }
-  {
-    const res = await request("POST", "/leaderboard/submit", { difficulty: "invalid", name: "AAA", score: 50 });
-    assert("invalid difficulty → 400", res.status === 400, `got ${res.status}`);
-  }
-  {
-    const res = await request("POST", "/leaderboard/submit", { difficulty: "normal", name: "AAA", score: 99999 });
-    assert("score > MAX_SCORE_SECONDS → 400", res.status === 400, `got ${res.status}`);
-  }
+  section("player registration flow");
+  await withRelay({}, async () => {
+    const invalidHandleResponse = await request("POST", "/player/register", { handle: "!!", displayName: "ACE" });
+    assert("invalid register handle returns 400", invalidHandleResponse.status === 400, `got ${invalidHandleResponse.status}`);
+    assert("invalid register handle returns explicit error text", invalidHandleResponse.body?.error === "Invalid handle", JSON.stringify(invalidHandleResponse.body));
 
-  // POST /api/leaderboard/submit — valid payload (no ROD → 502)
-  section("POST /api/leaderboard/submit - valid payload, no ROD");
-  {
-    const res = await request("POST", "/leaderboard/submit", { difficulty: "hard", name: "TST", score: 123.5 });
-    assert("valid submit → 502 (no ROD)", res.status === 502, `got ${res.status}`);
-    assert("body.ok false", res.body?.ok === false);
-  }
+    const registerResponse = await request("POST", "/player/register", { handle: "pilot01", displayName: "ace" });
+    assert("valid registration returns 200", registerResponse.status === 200, `got ${registerResponse.status}`);
+    assert("registration marks identity as registered", registerResponse.body?.player?.identityRegistered === true, JSON.stringify(registerResponse.body));
+    assert("registration marks record as registered", registerResponse.body?.player?.recordRegistered === true, JSON.stringify(registerResponse.body));
+    assert("registration allows future submissions", registerResponse.body?.player?.canSubmit === true, JSON.stringify(registerResponse.body));
+    assert("registration returns p/<handle> identity name", registerResponse.body?.player?.identityName === "p/pilot01", JSON.stringify(registerResponse.body));
+    assert("registration returns player-owned record name", registerResponse.body?.player?.recordName === "g/voidrunner3d/pilot01/record", JSON.stringify(registerResponse.body));
+    assert("newly registered player starts with no easy score", registerResponse.body?.player?.scores?.easy === null, JSON.stringify(registerResponse.body?.player?.scores));
 
-  // 404 for unknown routes
+    const repeatRegisterResponse = await request("POST", "/player/register", { handle: "pilot01", displayName: "ACE" });
+    assert("re-registering an existing handle still returns 200", repeatRegisterResponse.status === 200, `got ${repeatRegisterResponse.status}`);
+    assert("re-registering preserves record linkage", repeatRegisterResponse.body?.player?.recordName === "g/voidrunner3d/pilot01/record", JSON.stringify(repeatRegisterResponse.body));
+  });
+
+  section("GET /api/player/status");
+  await withRelay({
+    "p/pilot02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "pilot02", recordName: "g/voidrunner3d/pilot02/record", displayName: "BETA" }),
+    "g/voidrunner3d/pilot02/record": createRecordValue("pilot02", {
+      easy: { score: 18.5, updatedAt: 1200, displayName: "BETA" }
+    })
+  }, async () => {
+    const invalidHandleResponse = await request("GET", "/player/status?handle=!!");
+    assert("invalid status handle returns 400", invalidHandleResponse.status === 400, `got ${invalidHandleResponse.status}`);
+
+    const unregisteredStatusResponse = await request("GET", "/player/status?handle=ghost01");
+    assert("unregistered handle status returns 200", unregisteredStatusResponse.status === 200, `got ${unregisteredStatusResponse.status}`);
+    assert("unregistered handle reports identityRegistered false", unregisteredStatusResponse.body?.player?.identityRegistered === false, JSON.stringify(unregisteredStatusResponse.body));
+    assert("unregistered handle reports recordRegistered false", unregisteredStatusResponse.body?.player?.recordRegistered === false, JSON.stringify(unregisteredStatusResponse.body));
+    assert("unregistered handle cannot submit", unregisteredStatusResponse.body?.player?.canSubmit === false, JSON.stringify(unregisteredStatusResponse.body));
+    assert("unregistered handle still returns derived record name", unregisteredStatusResponse.body?.player?.recordName === "g/voidrunner3d/ghost01/record", JSON.stringify(unregisteredStatusResponse.body));
+
+    const registeredStatusResponse = await request("GET", "/player/status?handle=pilot02");
+    assert("registered handle status returns 200", registeredStatusResponse.status === 200, `got ${registeredStatusResponse.status}`);
+    assert("registered handle reports identityRegistered true", registeredStatusResponse.body?.player?.identityRegistered === true, JSON.stringify(registeredStatusResponse.body));
+    assert("registered handle reports recordRegistered true", registeredStatusResponse.body?.player?.recordRegistered === true, JSON.stringify(registeredStatusResponse.body));
+    assert("registered handle can submit", registeredStatusResponse.body?.player?.canSubmit === true, JSON.stringify(registeredStatusResponse.body));
+    assert("registered handle exposes linked record name", registeredStatusResponse.body?.player?.recordName === "g/voidrunner3d/pilot02/record", JSON.stringify(registeredStatusResponse.body));
+    assert("registered handle exposes stored easy score", registeredStatusResponse.body?.player?.scores?.easy?.score === 18.5, JSON.stringify(registeredStatusResponse.body?.player?.scores));
+  });
+
+  section("POST /api/leaderboard/submit - validation and registration guard");
+  await withRelay({}, async () => {
+    const emptyBodyResponse = await request("POST", "/leaderboard/submit", {});
+    assert("empty submit body returns 400", emptyBodyResponse.status === 400, `got ${emptyBodyResponse.status}`);
+    assert("empty submit body returns explicit error text", typeof emptyBodyResponse.body?.error === "string");
+
+    const invalidHandleResponse = await request("POST", "/leaderboard/submit", {
+      handle: "!!",
+      displayName: "ACE",
+      difficulty: "normal",
+      score: 10
+    });
+    assert("invalid submit handle returns 400", invalidHandleResponse.status === 400, `got ${invalidHandleResponse.status}`);
+
+    const invalidDisplayNameResponse = await request("POST", "/leaderboard/submit", {
+      handle: "pilot01",
+      displayName: "!!!",
+      difficulty: "normal",
+      score: 10
+    });
+    assert("invalid submit display name returns 400", invalidDisplayNameResponse.status === 400, `got ${invalidDisplayNameResponse.status}`);
+
+    const negativeScoreResponse = await request("POST", "/leaderboard/submit", {
+      handle: "pilot01",
+      displayName: "ACE",
+      difficulty: "normal",
+      score: -5
+    });
+    assert("negative submit score returns 400", negativeScoreResponse.status === 400, `got ${negativeScoreResponse.status}`);
+
+    const invalidDifficultyResponse = await request("POST", "/leaderboard/submit", {
+      handle: "pilot01",
+      displayName: "ACE",
+      difficulty: "invalid",
+      score: 50
+    });
+    assert("invalid submit difficulty returns 400", invalidDifficultyResponse.status === 400, `got ${invalidDifficultyResponse.status}`);
+
+    const oversizedScoreResponse = await request("POST", "/leaderboard/submit", {
+      handle: "pilot01",
+      displayName: "ACE",
+      difficulty: "normal",
+      score: 99999
+    });
+    assert("submit score above max returns 400", oversizedScoreResponse.status === 400, `got ${oversizedScoreResponse.status}`);
+
+    const unregisteredSubmitResponse = await request("POST", "/leaderboard/submit", {
+      handle: "pilot01",
+      displayName: "ACE",
+      difficulty: "hard",
+      score: 123.5
+    });
+    assert("unregistered submit returns 409", unregisteredSubmitResponse.status === 409, `got ${unregisteredSubmitResponse.status}`);
+    assert("unregistered submit returns explicit registration error", unregisteredSubmitResponse.body?.error === "Player is not fully registered", JSON.stringify(unregisteredSubmitResponse.body));
+  });
+
+  section("POST /api/leaderboard/submit - player-owned record updates");
+  await withRelay({
+    "p/pilot01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "pilot01", recordName: "g/voidrunner3d/pilot01/record", displayName: "ACE" }),
+    "g/voidrunner3d/pilot01/record": createRecordValue("pilot01", {
+      easy: { score: 10, updatedAt: 1000, displayName: "ACE" },
+      normal: { score: 8, updatedAt: 900, displayName: "ACE" }
+    }),
+    "p/pilot02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "pilot02", recordName: "g/voidrunner3d/pilot02/record", displayName: "BETA" }),
+    "g/voidrunner3d/pilot02/record": createRecordValue("pilot02", {
+      easy: { score: 16, updatedAt: 1100, displayName: "BETA" },
+      normal: { score: 14, updatedAt: 1200, displayName: "BETA" }
+    })
+  }, async () => {
+    const higherScoreResponse = await request("POST", "/leaderboard/submit", {
+      handle: "pilot01",
+      displayName: "ACE",
+      difficulty: "easy",
+      score: 20
+    });
+    assert("registered submit returns 200", higherScoreResponse.status === 200, `got ${higherScoreResponse.status}`);
+    assert("submit response includes updated player easy score", higherScoreResponse.body?.player?.scores?.easy?.score === 20, JSON.stringify(higherScoreResponse.body));
+    assert("submit response preserves another difficulty on same record", higherScoreResponse.body?.player?.scores?.normal?.score === 8, JSON.stringify(higherScoreResponse.body?.player?.scores));
+    assert("submit response leaderboard includes the submitting player", higherScoreResponse.body?.entries?.some((entry) => entry.handle === "pilot01" && entry.score === 20), JSON.stringify(higherScoreResponse.body?.entries));
+
+    const lowerScoreResponse = await request("POST", "/leaderboard/submit", {
+      handle: "pilot01",
+      displayName: "ACE",
+      difficulty: "easy",
+      score: 19
+    });
+    assert("lower follow-up score still returns 200", lowerScoreResponse.status === 200, `got ${lowerScoreResponse.status}`);
+    assert("lower follow-up score does not replace the best easy score", lowerScoreResponse.body?.player?.scores?.easy?.score === 20, JSON.stringify(lowerScoreResponse.body?.player?.scores));
+
+    const otherPlayerStatusResponse = await request("GET", "/player/status?handle=pilot02");
+    assert("other player's status still returns 200", otherPlayerStatusResponse.status === 200, `got ${otherPlayerStatusResponse.status}`);
+    assert("other player's easy score remains unchanged", otherPlayerStatusResponse.body?.player?.scores?.easy?.score === 16, JSON.stringify(otherPlayerStatusResponse.body?.player?.scores));
+    assert("other player's normal score remains unchanged", otherPlayerStatusResponse.body?.player?.scores?.normal?.score === 14, JSON.stringify(otherPlayerStatusResponse.body?.player?.scores));
+  });
+
+  section("GET /api/leaderboard - aggregation from scanned player records");
+  await withRelay({
+    "g/voidrunner3d/easy": JSON.stringify({ entries: [["OLD", 999, 1]] }),
+    "p/p00": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p00", recordName: "g/voidrunner3d/p00/record", displayName: "P00" }),
+    "g/voidrunner3d/p00/record": createRecordValue("p00", { easy: { score: 5, updatedAt: 100, displayName: "P00" } }),
+    "p/p01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p01", recordName: "g/voidrunner3d/p01/record", displayName: "P01" }),
+    "g/voidrunner3d/p01/record": createRecordValue("p01", { easy: { score: 12, updatedAt: 101, displayName: "P01" } }),
+    "p/p02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p02", recordName: "g/voidrunner3d/p02/record", displayName: "P02" }),
+    "g/voidrunner3d/p02/record": createRecordValue("p02", { easy: { score: 18, updatedAt: 102, displayName: "P02" } }),
+    "p/p03": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p03", recordName: "g/voidrunner3d/p03/record", displayName: "P03" }),
+    "g/voidrunner3d/p03/record": createRecordValue("p03", { easy: { score: 11, updatedAt: 103, displayName: "P03" } }),
+    "p/p04": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p04", recordName: "g/voidrunner3d/p04/record", displayName: "P04" }),
+    "g/voidrunner3d/p04/record": createRecordValue("p04", { easy: { score: 17, updatedAt: 104, displayName: "P04" } }),
+    "p/p05": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p05", recordName: "g/voidrunner3d/p05/record", displayName: "P05" }),
+    "g/voidrunner3d/p05/record": createRecordValue("p05", { easy: { score: 7, updatedAt: 105, displayName: "P05" } }),
+    "p/p06": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p06", recordName: "g/voidrunner3d/p06/record", displayName: "P06" }),
+    "g/voidrunner3d/p06/record": createRecordValue("p06", { easy: { score: 19, updatedAt: 106, displayName: "P06" } }),
+    "p/p07": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p07", recordName: "g/voidrunner3d/p07/record", displayName: "P07" }),
+    "g/voidrunner3d/p07/record": createRecordValue("p07", { easy: { score: 13, updatedAt: 107, displayName: "P07" } }),
+    "p/p08": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p08", recordName: "g/voidrunner3d/p08/record", displayName: "P08" }),
+    "g/voidrunner3d/p08/record": createRecordValue("p08", { easy: { score: 9, updatedAt: 108, displayName: "P08" } }),
+    "p/p09": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p09", recordName: "g/voidrunner3d/p09/record", displayName: "P09" }),
+    "g/voidrunner3d/p09/record": createRecordValue("p09", { easy: { score: 16, updatedAt: 109, displayName: "P09" } }),
+    "p/p10": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p10", recordName: "g/voidrunner3d/p10/record", displayName: "P10" }),
+    "g/voidrunner3d/p10/record": createRecordValue("p10", { easy: { score: 14, updatedAt: 110, displayName: "P10" } }),
+    "p/p11": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p11", recordName: "g/voidrunner3d/p11/record", displayName: "P11" }),
+    "g/voidrunner3d/p11/record": createRecordValue("p11", { easy: { score: 8, updatedAt: 111, displayName: "P11" } }),
+    "g/voidrunner3d/badjson/record": "{broken json}",
+    "g/voidrunner3d/mismatch/record": JSON.stringify({ handle: "other", scores: { easy: { score: 999, updatedAt: 999, displayName: "BAD" } } }),
+    "g/voidrunner3d/missing-score/record": JSON.stringify({ handle: "missing-score", scores: { easy: { updatedAt: 500, displayName: "MISS" } } }),
+    "g/voidrunner3d/not-a-record/profile": createRecordValue("not-a-record", { easy: { score: 777, updatedAt: 777, displayName: "SIDE" } })
+  }, async () => {
+    const leaderboardResponse = await request("GET", "/leaderboard?difficulty=easy");
+    assert("leaderboard request returns 200", leaderboardResponse.status === 200, `got ${leaderboardResponse.status}`);
+    assert("leaderboard response ok is true", leaderboardResponse.body?.ok === true, JSON.stringify(leaderboardResponse.body));
+    assert("leaderboard response difficulty echoes easy", leaderboardResponse.body?.difficulty === "easy", JSON.stringify(leaderboardResponse.body));
+    assert("leaderboard response returns exactly 10 entries", leaderboardResponse.body?.entries?.length === 10, JSON.stringify(leaderboardResponse.body?.entries));
+    assert("leaderboard ignores removed shared snapshot names", !leaderboardResponse.body?.entries?.some((entry) => entry.name === "OLD"), JSON.stringify(leaderboardResponse.body?.entries));
+    assert("leaderboard rank 1 is the highest scanned player score", leaderboardResponse.body?.entries?.[0]?.handle === "p06", JSON.stringify(leaderboardResponse.body?.entries));
+    assert("leaderboard rank 10 keeps the lowest surviving top-10 score", leaderboardResponse.body?.entries?.[9]?.score === 8, JSON.stringify(leaderboardResponse.body?.entries?.[9]));
+    assert("leaderboard safely ignores malformed or incomplete scanned records", !leaderboardResponse.body?.entries?.some((entry) => entry.handle === "badjson" || entry.handle === "mismatch" || entry.handle === "missing-score"), JSON.stringify(leaderboardResponse.body?.entries));
+  });
+
   section("404 for unknown routes");
-  {
-    const res = await request("GET", "/unknown");
-    assert("unknown route → 404", res.status === 404, `got ${res.status}`);
-    assert("body.ok false", res.body?.ok === false);
-  }
-  {
-    const res = await request("POST", "/health");
-    assert("POST /health → 404", res.status === 404, `got ${res.status}`);
-  }
+  await withRelay({}, async () => {
+    const unknownRouteResponse = await request("GET", "/unknown");
+    assert("unknown route returns 404", unknownRouteResponse.status === 404, `got ${unknownRouteResponse.status}`);
+    assert("unknown route response ok is false", unknownRouteResponse.body?.ok === false, JSON.stringify(unknownRouteResponse.body));
 
-  // Invalid JSON body
+    const wrongMethodResponse = await request("POST", "/health");
+    assert("POST /health returns 404", wrongMethodResponse.status === 404, `got ${wrongMethodResponse.status}`);
+  });
+
   section("POST with invalid JSON body");
-  {
+  await withRelay({}, async () => {
     const result = await new Promise((resolve) => {
       const options = {
         hostname: "127.0.0.1",
@@ -222,17 +429,16 @@ async function runTests() {
       };
       const req = http.request(options, (res) => {
         let raw = "";
-        res.on("data", c => { raw += c; });
+        res.on("data", (chunk) => { raw += chunk; });
         res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(raw) }));
       });
       req.on("error", resolve);
       req.write("{not valid json}");
       req.end();
     });
-    assert("malformed JSON body → 400", result.status === 400, `got ${result.status}`);
-  }
-
-  stopRelay();
+    assert("malformed JSON body returns 400", result.status === 400, `got ${result.status}`);
+    assert("malformed JSON body returns explicit error text", result.body?.error === "Invalid JSON body", JSON.stringify(result.body));
+  });
 
   console.log(`\n════════════════════════════════`);
   console.log(`Results: ${passed} passed, ${failed} failed`);

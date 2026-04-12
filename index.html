@@ -170,7 +170,7 @@
     .chain-submit {
       margin: 12px 0 14px;
       display: grid;
-      grid-template-columns: minmax(120px, 1fr) auto;
+      grid-template-columns: minmax(120px, 1fr) auto auto;
       gap: 8px;
       align-items: center;
     }
@@ -346,7 +346,8 @@
       <p id="finalScoreText" class="subtitle">Final Time: 00:00.000</p>
       <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
       <div class="chain-submit">
-        <input id="playerInitialsInput" class="initials-input" type="text" maxlength="6" value="AAA" autocomplete="off" spellcheck="false" />
+        <input id="playerInitialsInput" class="initials-input" type="text" maxlength="24" value="pilot01" autocomplete="off" spellcheck="false" />
+        <button id="registerChainPlayerBtn" class="action-btn">Register</button>
         <button id="submitChainScoreBtn" class="action-btn">Submit to Chain</button>
       </div>
       <p id="submitChainStatusText" class="status-line">Chain submission status: idle</p>
@@ -417,15 +418,18 @@
       const chainStatusText = document.getElementById("chainStatusText");
       const chainLeaderboardList = document.getElementById("chainLeaderboardList");
       const playerInitialsInput = document.getElementById("playerInitialsInput");
+      const registerChainPlayerBtn = document.getElementById("registerChainPlayerBtn");
       const submitChainScoreBtn = document.getElementById("submitChainScoreBtn");
       const submitChainStatusText = document.getElementById("submitChainStatusText");
 
       const RELAY_BASE_URL = "http://127.0.0.1:8787/api";
-      const PLAYER_NAME_STORAGE_KEY = "voidrunner_player_initials";
+      const PLAYER_HANDLE_STORAGE_KEY = "voidrunner_player_handle";
+      const PLAYER_DISPLAY_NAME_STORAGE_KEY = "voidrunner_player_display_name";
       const allowedDifficultyKeys = new Set(["easy", "normal", "hard"]);
 
       let lastFinalScore = 0;
       let chainEntries = [];
+      let registeredPlayerHandle = "";
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -861,10 +865,24 @@
           .slice(0, 6);
       }
 
-      function readStoredInitials() {
-        const storedValue = localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || "AAA";
-        const initials = sanitizeInitials(storedValue);
-        return initials || "AAA";
+      function sanitizeHandle(rawValue) {
+        return String(rawValue || "")
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9_-]/g, "")
+          .slice(0, 24);
+      }
+
+      function readStoredHandle() {
+        const storedValue = localStorage.getItem(PLAYER_HANDLE_STORAGE_KEY) || "pilot01";
+        const handle = sanitizeHandle(storedValue);
+        return handle || "pilot01";
+      }
+
+      function getDisplayNameFromHandle(handle) {
+        const storedDisplayName = sanitizeInitials(localStorage.getItem(PLAYER_DISPLAY_NAME_STORAGE_KEY) || "");
+        if (storedDisplayName) return storedDisplayName;
+        return sanitizeInitials(handle) || "PLAYER";
       }
 
       function setChainStatus(text, color) {
@@ -875,6 +893,15 @@
       function setSubmitStatus(text, color) {
         submitChainStatusText.textContent = `Chain submission status: ${text}`;
         submitChainStatusText.style.color = color;
+      }
+
+      function updateSubmitButtonState() {
+        submitChainScoreBtn.disabled = !registeredPlayerHandle;
+      }
+
+      function applyPlayerStatus(player) {
+        registeredPlayerHandle = player && player.canSubmit ? player.handle : "";
+        updateSubmitButtonState();
       }
 
       function renderChainLeaderboard() {
@@ -913,12 +940,79 @@
         renderChainLeaderboard();
       }
 
-      async function submitScoreToChain() {
-        const playerName = sanitizeInitials(playerInitialsInput.value);
-        playerInitialsInput.value = playerName;
+      async function refreshPlayerStatus() {
+        const handle = sanitizeHandle(playerInitialsInput.value);
+        if (!handle) {
+          applyPlayerStatus(null);
+          setSubmitStatus("enter handle (a-z, 0-9, _, -)", "#ffb0b0");
+          return;
+        }
 
-        if (!playerName) {
-          setSubmitStatus("enter initials (A-Z0-9)", "#ffb0b0");
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/player/status?handle=${encodeURIComponent(handle)}`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          const player = payload && payload.player ? payload.player : null;
+          applyPlayerStatus(player);
+
+          if (player && player.canSubmit) {
+            setSubmitStatus(`registered as p/${handle}`, "#65f5a8");
+          } else {
+            setSubmitStatus("not registered, use Register first", "#ffb0b0");
+          }
+        } catch {
+          applyPlayerStatus(null);
+          setSubmitStatus("relay offline (status check failed)", "#ffb0b0");
+        }
+      }
+
+      async function registerPlayerForChain() {
+        const handle = sanitizeHandle(playerInitialsInput.value);
+        playerInitialsInput.value = handle;
+
+        if (!handle || handle.length < 3) {
+          setSubmitStatus("handle must be 3-24 chars", "#ffb0b0");
+          return;
+        }
+
+        registerChainPlayerBtn.disabled = true;
+        setSubmitStatus("registering player...", "#a6c6dd");
+
+        try {
+          const displayName = getDisplayNameFromHandle(handle);
+          const response = await fetch(`${RELAY_BASE_URL}/player/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ handle, displayName })
+          });
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          const player = payload && payload.player ? payload.player : null;
+
+          localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
+          localStorage.setItem(PLAYER_DISPLAY_NAME_STORAGE_KEY, displayName);
+          applyPlayerStatus(player);
+          setSubmitStatus(`registered as p/${handle}`, "#65f5a8");
+        } catch {
+          applyPlayerStatus(null);
+          setSubmitStatus("registration failed (relay or node unavailable)", "#ffb0b0");
+        } finally {
+          registerChainPlayerBtn.disabled = false;
+        }
+      }
+
+      async function submitScoreToChain() {
+        const handle = sanitizeHandle(playerInitialsInput.value);
+        playerInitialsInput.value = handle;
+
+        if (!handle || handle.length < 3) {
+          setSubmitStatus("enter registered handle", "#ffb0b0");
+          return;
+        }
+
+        if (!registeredPlayerHandle || registeredPlayerHandle !== handle) {
+          setSubmitStatus("register this handle first", "#ffb0b0");
           return;
         }
 
@@ -926,12 +1020,14 @@
         setSubmitStatus("submitting...", "#a6c6dd");
 
         try {
+          const displayName = getDisplayNameFromHandle(handle);
           const response = await fetch(`${RELAY_BASE_URL}/leaderboard/submit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               difficulty: selectedDifficulty,
-              name: playerName,
+              handle,
+              displayName,
               score: lastFinalScore
             })
           });
@@ -939,7 +1035,9 @@
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const payload = await response.json();
           chainEntries = Array.isArray(payload.entries) ? payload.entries : [];
-          localStorage.setItem(PLAYER_NAME_STORAGE_KEY, playerName);
+          localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
+          localStorage.setItem(PLAYER_DISPLAY_NAME_STORAGE_KEY, displayName);
+          applyPlayerStatus(payload.player || null);
           setChainStatus("online", "#65f5a8");
           setSubmitStatus("submitted", "#65f5a8");
           renderChainLeaderboard();
@@ -1501,10 +1599,11 @@
         finalScoreText.textContent = `Final Time: ${formatTime(survivalTime)}`;
         recordText.textContent = `${isNewRecord ? "NEW LOCAL RECORD! " : "Local Best Time: "}${formatTime(highScore)}`;
         recordText.style.color = isNewRecord ? "#8cffbf" : "#a6c6dd";
-        playerInitialsInput.value = readStoredInitials();
-        setSubmitStatus("idle", "#9cc8e2");
+        playerInitialsInput.value = readStoredHandle();
+        setSubmitStatus("checking registration...", "#a6c6dd");
         gameOverOverlay.classList.remove("hidden");
         loadChainLeaderboard();
+        refreshPlayerStatus();
       }
 
       function togglePause() {
@@ -1585,14 +1684,17 @@
         startBtn.addEventListener("click", () => startGame());
         playAgainBtn.addEventListener("click", () => startGame());
         mainMenuBtn.addEventListener("click", () => showMenu());
+        registerChainPlayerBtn.addEventListener("click", () => registerPlayerForChain());
         submitChainScoreBtn.addEventListener("click", () => submitScoreToChain());
 
         playerInitialsInput.addEventListener("input", () => {
-          playerInitialsInput.value = sanitizeInitials(playerInitialsInput.value);
+          playerInitialsInput.value = sanitizeHandle(playerInitialsInput.value);
+          registeredPlayerHandle = "";
+          updateSubmitButtonState();
         });
 
         playerInitialsInput.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") submitScoreToChain();
+          if (event.key === "Enter") registerPlayerForChain();
         });
 
         pauseBtn.addEventListener("click", () => {
@@ -1617,8 +1719,10 @@
 
       setSelectedDifficulty("normal");
       showMenu();
-      playerInitialsInput.value = readStoredInitials();
-      setSubmitStatus("idle", "#9cc8e2");
+      playerInitialsInput.value = readStoredHandle();
+      setSubmitStatus("checking registration...", "#a6c6dd");
+      updateSubmitButtonState();
+      refreshPlayerStatus();
 
       let lastTime = performance.now();
 

@@ -1,16 +1,38 @@
 "use strict";
 
-// ---- Inline the pure functions from leaderboard-relay.js ----
-
+const GAME_PREFIX = "g/voidrunner3d/";
 const MAX_ENTRIES = 10;
-const MAX_NAME_LENGTH = 6;
+const MAX_DISPLAY_NAME_LENGTH = 6;
+const MIN_HANDLE_LENGTH = 3;
+const MAX_HANDLE_LENGTH = 24;
 const MAX_SCORE_SECONDS = 86400;
 
-function sanitizePlayerName(rawName) {
+const difficultyKeys = Object.freeze({
+  easy: true,
+  normal: true,
+  hard: true
+});
+
+function sanitizeDisplayName(rawName) {
   if (typeof rawName !== "string") return null;
-  const normalizedName = rawName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_NAME_LENGTH);
-  if (!normalizedName || normalizedName.length > MAX_NAME_LENGTH) return null;
+  const normalizedName = rawName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_DISPLAY_NAME_LENGTH);
+  if (!normalizedName || normalizedName.length > MAX_DISPLAY_NAME_LENGTH) return null;
   return normalizedName;
+}
+
+function sanitizeHandle(rawHandle) {
+  if (typeof rawHandle !== "string") return null;
+  const normalizedHandle = rawHandle.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+  if (normalizedHandle.length < MIN_HANDLE_LENGTH || normalizedHandle.length > MAX_HANDLE_LENGTH) return null;
+  return normalizedHandle;
+}
+
+function getIdentityNameForHandle(handle) {
+  return `p/${handle}`;
+}
+
+function getRecordNameForHandle(handle) {
+  return `${GAME_PREFIX}${handle}/record`;
 }
 
 function sanitizeScore(rawScore) {
@@ -20,49 +42,135 @@ function sanitizeScore(rawScore) {
   return Math.round(parsedScore * 1000) / 1000;
 }
 
-function parseOnChainEntries(value) {
-  if (typeof value !== "string" || value.length === 0) return [];
+function parseRecordValue(value, expectedHandle) {
+  if (typeof value !== "string" || value.length === 0) return null;
+
   let parsedValue;
-  try { parsedValue = JSON.parse(value); } catch { return []; }
-  const rawEntries = Array.isArray(parsedValue)
-    ? parsedValue
-    : (parsedValue && Array.isArray(parsedValue.entries) ? parsedValue.entries : []);
-  const normalizedEntries = [];
-  for (const candidateEntry of rawEntries) {
-    if (!Array.isArray(candidateEntry) || candidateEntry.length < 2) continue;
-    const entryName = sanitizePlayerName(candidateEntry[0]);
-    const entryScore = sanitizeScore(candidateEntry[1]);
-    const entryTimestamp = Number(candidateEntry[2]) || 0;
-    if (!entryName || entryScore === null) continue;
-    normalizedEntries.push([entryName, entryScore, entryTimestamp]);
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
+    return null;
   }
-  normalizedEntries.sort((a, b) => {
-    if (b[1] !== a[1]) return b[1] - a[1];
-    return b[2] - a[2];
+
+  if (!parsedValue || typeof parsedValue !== "object") return null;
+  const storedHandle = sanitizeHandle(parsedValue.handle);
+  if (!storedHandle || storedHandle !== expectedHandle) return null;
+
+  const scoresObject = parsedValue.scores && typeof parsedValue.scores === "object" ? parsedValue.scores : {};
+  const normalizedScores = {};
+
+  for (const difficulty of Object.keys(difficultyKeys)) {
+    const rawScoreEntry = scoresObject[difficulty];
+    if (!rawScoreEntry || typeof rawScoreEntry !== "object") {
+      normalizedScores[difficulty] = null;
+      continue;
+    }
+
+    const scoreValue = sanitizeScore(rawScoreEntry.score);
+    if (scoreValue === null) {
+      normalizedScores[difficulty] = null;
+      continue;
+    }
+
+    const timestampValue = Number(rawScoreEntry.updatedAt) || 0;
+    const storedDisplayName = sanitizeDisplayName(rawScoreEntry.displayName);
+    normalizedScores[difficulty] = {
+      score: scoreValue,
+      updatedAt: timestampValue,
+      displayName: storedDisplayName || storedHandle.toUpperCase()
+    };
+  }
+
+  return {
+    handle: storedHandle,
+    scores: normalizedScores
+  };
+}
+
+function serializeRecordValue(handle, scoresByDifficulty) {
+  const persistedScores = {};
+  for (const difficulty of Object.keys(difficultyKeys)) {
+    const scoreEntry = scoresByDifficulty[difficulty];
+    if (!scoreEntry) continue;
+    persistedScores[difficulty] = {
+      score: scoreEntry.score,
+      updatedAt: scoreEntry.updatedAt,
+      displayName: scoreEntry.displayName
+    };
+  }
+
+  return JSON.stringify({
+    version: 1,
+    game: "voidrunner3d",
+    handle,
+    scores: persistedScores
   });
-  return normalizedEntries.slice(0, MAX_ENTRIES);
 }
 
-function serializeOnChainEntries(entries) {
-  return JSON.stringify(entries.map((e) => [e[0], e[1], e[2]]));
+function applyScoreSubmission(existingRecord, handle, difficulty, score, displayName, timestamp) {
+  const parsedRecord = existingRecord || {
+    handle,
+    scores: { easy: null, normal: null, hard: null }
+  };
+
+  const nextScores = {
+    easy: parsedRecord.scores.easy,
+    normal: parsedRecord.scores.normal,
+    hard: parsedRecord.scores.hard
+  };
+
+  const existingDifficultyScore = nextScores[difficulty];
+  if (!existingDifficultyScore || score >= existingDifficultyScore.score) {
+    nextScores[difficulty] = {
+      score,
+      updatedAt: timestamp,
+      displayName
+    };
+  }
+
+  return {
+    handle,
+    scores: nextScores
+  };
 }
 
-function mergeEntries(existingEntries, newName, newScore) {
-  const merged = (Array.isArray(existingEntries) ? existingEntries : [])
-    .filter((e) => e[0] !== newName);
-  merged.push([newName, newScore, Date.now()]);
-  merged.sort((a, b) => {
-    if (b[1] !== a[1]) return b[1] - a[1];
-    return b[2] - a[2];
+function aggregateLeaderboardRows(scannedRows, difficulty) {
+  const candidateEntries = [];
+
+  for (const row of scannedRows) {
+    const onChainName = typeof row?.name === "string" ? row.name : "";
+    const onChainValue = typeof row?.value === "string" ? row.value : "";
+    if (!onChainName.endsWith("/record")) continue;
+
+    const handleFromName = sanitizeHandle(onChainName.slice(GAME_PREFIX.length, -"/record".length));
+    if (!handleFromName) continue;
+
+    const parsedRecord = parseRecordValue(onChainValue, handleFromName);
+    if (!parsedRecord) continue;
+
+    const selectedDifficultyScore = parsedRecord.scores[difficulty];
+    if (!selectedDifficultyScore) continue;
+
+    candidateEntries.push({
+      handle: handleFromName,
+      name: selectedDifficultyScore.displayName || handleFromName.toUpperCase(),
+      score: selectedDifficultyScore.score,
+      updatedAt: selectedDifficultyScore.updatedAt || 0
+    });
+  }
+
+  candidateEntries.sort((leftEntry, rightEntry) => {
+    if (rightEntry.score !== leftEntry.score) return rightEntry.score - leftEntry.score;
+    return rightEntry.updatedAt - leftEntry.updatedAt;
   });
-  return merged.slice(0, MAX_ENTRIES);
-}
 
-function entryExists(entries, expectedName, expectedScore) {
-  return entries.some((e) => e[0] === expectedName && Math.abs(e[1] - expectedScore) < 0.0005);
+  return candidateEntries.slice(0, MAX_ENTRIES).map((entry, index) => ({
+    rank: index + 1,
+    handle: entry.handle,
+    name: entry.name,
+    score: entry.score
+  }));
 }
-
-// ---- Mini test runner ----
 
 let passed = 0;
 let failed = 0;
@@ -81,117 +189,213 @@ function section(title) {
   console.log(`\n── ${title}`);
 }
 
-// ---- sanitizePlayerName ----
-section("sanitizePlayerName");
-assert("accepts simple letters",          sanitizePlayerName("ABC") === "ABC");
-assert("uppercases lowercase",             sanitizePlayerName("abc") === "ABC");
-assert("strips non-alphanumeric",          sanitizePlayerName("a@#b!") === "AB");
-assert("trims to MAX_NAME_LENGTH (6)",     sanitizePlayerName("ABCDEFGH") === "ABCDEF");
-assert("returns null for non-string",      sanitizePlayerName(123) === null);
-assert("returns null for empty result",    sanitizePlayerName("!!!") === null);
-assert("returns null for empty string",    sanitizePlayerName("") === null);
-assert("accepts digits",                   sanitizePlayerName("A1B2C3") === "A1B2C3");
-assert("strips spaces",                    sanitizePlayerName("A B C") === "ABC");
-assert("accepts exactly 6 chars",          sanitizePlayerName("ABCDEF") === "ABCDEF");
+section("player identity and record naming");
+assert("identity names use p/<handle>", getIdentityNameForHandle("pilot01") === "p/pilot01");
+assert(
+  "record names use g/voidrunner3d/<handle>/record",
+  getRecordNameForHandle("pilot01") === "g/voidrunner3d/pilot01/record"
+);
 
-// ---- sanitizeScore ----
-section("sanitizeScore");
-assert("accepts valid integer",            sanitizeScore(120) === 120);
-assert("accepts valid float",              sanitizeScore(3.5) === 3.5);
-assert("accepts zero",                     sanitizeScore(0) === 0);
-assert("accepts max boundary",             sanitizeScore(86400) === 86400);
-assert("rejects above max",                sanitizeScore(86401) === null);
-assert("rejects negative",                 sanitizeScore(-1) === null);
-assert("rejects NaN string",              sanitizeScore("abc") === null);
-assert("rejects Infinity",                 sanitizeScore(Infinity) === null);
-assert("accepts numeric string",           sanitizeScore("42") === 42);
-assert("rounds to 3 decimal places",      sanitizeScore(1.23456789) === 1.235);
+section("sanitizeHandle");
+assert("accepts lowercase handles", sanitizeHandle("pilot01") === "pilot01");
+assert("normalizes uppercase and trims whitespace", sanitizeHandle("  Pilot_01  ") === "pilot_01");
+assert("rejects handles shorter than 3 chars", sanitizeHandle("ab") === null);
+assert("rejects handles longer than 24 chars", sanitizeHandle("abcdefghijklmnopqrstuvwxyz") === null);
+assert("removes unsupported characters", sanitizeHandle("pilot!@#-01") === "pilot-01");
 
-// ---- parseOnChainEntries ----
-section("parseOnChainEntries");
-assert("returns [] for empty string",      parseOnChainEntries("").length === 0);
-assert("returns [] for invalid JSON",      parseOnChainEntries("{bad}").length === 0);
-assert("returns [] for non-string",        parseOnChainEntries(null).length === 0);
-{
-  const entries = parseOnChainEntries(JSON.stringify([["AAA", 100, 1000], ["BBB", 200, 2000]]));
-  assert("parses array format",            entries.length === 2);
-  assert("sorts descending by score",      entries[0][0] === "BBB" && entries[1][0] === "AAA",
-    JSON.stringify(entries));
-}
-{
-  const objFormat = JSON.stringify({ entries: [["AAA", 50, 0], ["CCC", 75, 0]] });
-  const entries = parseOnChainEntries(objFormat);
-  assert("parses object with entries key", entries.length === 2);
-  assert("object format sorted correctly", entries[0][0] === "CCC");
-}
-{
-  const many = Array.from({ length: 12 }, (_, i) => [`P${i}`, i + 1, i]);
-  const entries = parseOnChainEntries(JSON.stringify(many));
-  assert("caps at MAX_ENTRIES=10",         entries.length === 10, `got ${entries.length}`);
-  assert("top 10 have highest scores",     entries[0][1] === 12);
-}
-{
-  const bad = parseOnChainEntries(JSON.stringify([["@@@", 10, 0], [null, 5, 0], ["OK", -1, 0]]));
-  assert("filters invalid names/scores",   bad.length === 0, JSON.stringify(bad));
-}
-{
-  const tied = JSON.stringify([["AAA", 100, 1000], ["BBB", 100, 2000]]);
-  const entries = parseOnChainEntries(tied);
-  assert("tie-breaks by timestamp desc",   entries[0][0] === "BBB", JSON.stringify(entries));
-}
+section("sanitizeDisplayName");
+assert("uppercases display names", sanitizeDisplayName("ace") === "ACE");
+assert("keeps digits in display names", sanitizeDisplayName("a1b2") === "A1B2");
+assert("truncates display names at 6 chars", sanitizeDisplayName("abcdefghi") === "ABCDEF");
+assert("rejects empty display names", sanitizeDisplayName("!!!") === null);
 
-// ---- serializeOnChainEntries ----
-section("serializeOnChainEntries");
+section("parseRecordValue");
 {
-  const serialized = serializeOnChainEntries([["AAA", 100, 1000]]);
-  const back = JSON.parse(serialized);
-  assert("roundtrips correctly",           back[0][0] === "AAA" && back[0][1] === 100 && back[0][2] === 1000);
-}
-assert("empty array serializes to []",    serializeOnChainEntries([]) === "[]");
+  const rawRecord = JSON.stringify({
+    version: 1,
+    game: "voidrunner3d",
+    handle: "pilot01",
+    scores: {
+      easy: { score: 12.3456, updatedAt: 100, displayName: "ace" },
+      normal: { score: 15, updatedAt: 200, displayName: "rocket" },
+      hard: { score: -1, updatedAt: 300, displayName: "bad" }
+    }
+  });
 
-// ---- mergeEntries ----
-section("mergeEntries");
-{
-  const existing = [["AAA", 100, 1000], ["BBB", 80, 900]];
-  const result = mergeEntries(existing, "CCC", 90);
-  assert("inserts new entry",              result.some(e => e[0] === "CCC"));
-  assert("sorted descending after insert", result[0][1] >= result[1][1] && result[1][1] >= result[2][1]);
+  const parsedRecord = parseRecordValue(rawRecord, "pilot01");
+  assert("parses the expected handle", parsedRecord?.handle === "pilot01", JSON.stringify(parsedRecord));
+  assert(
+    "rounds and keeps valid easy score",
+    parsedRecord?.scores.easy?.score === 12.346,
+    JSON.stringify(parsedRecord?.scores.easy)
+  );
+  assert(
+    "normalizes display names to uppercase",
+    parsedRecord?.scores.normal?.displayName === "ROCKET",
+    JSON.stringify(parsedRecord?.scores.normal)
+  );
+  assert("invalid difficulty score becomes null instead of breaking parsing", parsedRecord?.scores.hard === null);
 }
+assert("returns null for malformed JSON", parseRecordValue("{bad json}", "pilot01") === null);
+assert(
+  "returns null when stored handle does not match expected handle",
+  parseRecordValue(JSON.stringify({ handle: "other", scores: {} }), "pilot01") === null
+);
 {
-  const existing = [["AAA", 100, 1000]];
-  const result = mergeEntries(existing, "AAA", 120);
-  assert("replaces existing same-name entry", result.filter(e => e[0] === "AAA").length === 1,
-    JSON.stringify(result));
-  assert("updated score is used",          result[0][1] === 120, `score=${result[0][1]}`);
-}
-{
-  const full = Array.from({ length: 10 }, (_, i) => [`P${i}`, 100 - i, i]);
-  const result = mergeEntries(full, "NEW", 1);
-  assert("caps at 10 entries after merge", result.length === 10, `got ${result.length}`);
-  assert("lowest score is excluded",       !result.some(e => e[0] === "NEW"), JSON.stringify(result.map(e => e[0])));
-}
-{
-  const result = mergeEntries(null, "AAA", 50);
-  assert("handles null existing gracefully", result.length === 1 && result[0][0] === "AAA");
-}
-{
-  const existing = [["ZZZ", 500, 1000], ["AAA", 100, 900]];
-  const result = mergeEntries(existing, "AAA", 600);
-  assert("updated entry rises to correct rank", result[0][0] === "AAA", JSON.stringify(result));
+  const parsedRecord = parseRecordValue(
+    JSON.stringify({
+      handle: "pilot01",
+      scores: { easy: { score: 11, updatedAt: 42, displayName: "***" } }
+    }),
+    "pilot01"
+  );
+  assert(
+    "falls back to uppercase handle when display name is invalid",
+    parsedRecord?.scores.easy?.displayName === "PILOT01",
+    JSON.stringify(parsedRecord?.scores.easy)
+  );
 }
 
-// ---- entryExists ----
-section("entryExists");
+section("serializeRecordValue");
 {
-  const entries = [["AAA", 100.0, 0], ["BBB", 50.0, 0]];
-  assert("finds exact match",              entryExists(entries, "AAA", 100.0));
-  assert("within tolerance match",         entryExists(entries, "AAA", 100.0004));
-  assert("outside tolerance no match",     !entryExists(entries, "AAA", 100.001));
-  assert("wrong name no match",            !entryExists(entries, "CCC", 100.0));
-  assert("empty list returns false",       !entryExists([], "AAA", 100));
+  const serializedRecord = serializeRecordValue("pilot01", {
+    easy: { score: 20, updatedAt: 100, displayName: "ACE" },
+    normal: null,
+    hard: { score: 30, updatedAt: 200, displayName: "PRO" }
+  });
+  const roundTripRecord = JSON.parse(serializedRecord);
+  assert("stores the handle in serialized records", roundTripRecord.handle === "pilot01", serializedRecord);
+  assert("stores only populated difficulty scores", !roundTripRecord.scores.normal, serializedRecord);
+  assert("keeps hard score values during serialization", roundTripRecord.scores.hard.score === 30, serializedRecord);
 }
 
-// ---- Summary ----
+section("best-score-only submission model");
+{
+  const currentRecord = parseRecordValue(
+    JSON.stringify({
+      handle: "pilot01",
+      scores: {
+        easy: { score: 10, updatedAt: 100, displayName: "ACE" },
+        normal: { score: 22, updatedAt: 200, displayName: "ACE" }
+      }
+    }),
+    "pilot01"
+  );
+
+  const lowerScoreUpdate = applyScoreSubmission(currentRecord, "pilot01", "easy", 9, "ACE", 300);
+  assert(
+    "lower score does not replace an existing best score",
+    lowerScoreUpdate.scores.easy?.score === 10,
+    JSON.stringify(lowerScoreUpdate.scores.easy)
+  );
+  assert(
+    "submitting one difficulty preserves other difficulty values",
+    lowerScoreUpdate.scores.normal?.score === 22,
+    JSON.stringify(lowerScoreUpdate.scores)
+  );
+
+  const higherScoreUpdate = applyScoreSubmission(currentRecord, "pilot01", "easy", 25, "ACE", 400);
+  assert(
+    "higher score replaces the existing best score",
+    higherScoreUpdate.scores.easy?.score === 25,
+    JSON.stringify(higherScoreUpdate.scores.easy)
+  );
+  assert(
+    "higher score also updates the timestamp for that difficulty",
+    higherScoreUpdate.scores.easy?.updatedAt === 400,
+    JSON.stringify(higherScoreUpdate.scores.easy)
+  );
+}
+
+section("leaderboard aggregation from scanned player records");
+{
+  const scannedRows = [
+    {
+      name: "g/voidrunner3d/pilot01/record",
+      value: serializeRecordValue("pilot01", {
+        easy: { score: 10, updatedAt: 100, displayName: "ACE" },
+        normal: null,
+        hard: null
+      })
+    },
+    {
+      name: "g/voidrunner3d/pilot02/record",
+      value: serializeRecordValue("pilot02", {
+        easy: { score: 15, updatedAt: 150, displayName: "BETA" },
+        normal: null,
+        hard: null
+      })
+    },
+    {
+      name: "g/voidrunner3d/easy",
+      value: JSON.stringify({ entries: [["OLD", 999, 1]] })
+    },
+    {
+      name: "g/voidrunner3d/pilot03/record",
+      value: "{broken json}"
+    },
+    {
+      name: "g/voidrunner3d/pilot04/record",
+      value: JSON.stringify({
+        handle: "different-handle",
+        scores: { easy: { score: 999, updatedAt: 999, displayName: "BAD" } }
+      })
+    },
+    {
+      name: "g/voidrunner3d/pilot05/profile",
+      value: serializeRecordValue("pilot05", {
+        easy: { score: 999, updatedAt: 999, displayName: "SIDE" },
+        normal: null,
+        hard: null
+      })
+    }
+  ];
+
+  const entries = aggregateLeaderboardRows(scannedRows, "easy");
+  assert("aggregates entries from player-owned /record names only", entries.length === 2, JSON.stringify(entries));
+  assert("ignores old shared snapshot names without /record suffix", !entries.some((entry) => entry.name === "OLD"), JSON.stringify(entries));
+  assert("sorts by score descending", entries[0]?.handle === "pilot02", JSON.stringify(entries));
+  assert("keeps rank numbering after sorting", entries[0]?.rank === 1 && entries[1]?.rank === 2, JSON.stringify(entries));
+}
+{
+  const scannedRows = Array.from({ length: 12 }, (_, index) => ({
+    name: `g/voidrunner3d/p${String(index).padStart(2, "0")}/record`,
+    value: serializeRecordValue(`p${String(index).padStart(2, "0")}`, {
+      easy: { score: index + 1, updatedAt: index, displayName: `P${index}` },
+      normal: null,
+      hard: null
+    })
+  }));
+
+  const entries = aggregateLeaderboardRows(scannedRows, "easy");
+  assert("limits aggregated leaderboard results to top 10", entries.length === 10, JSON.stringify(entries));
+  assert("keeps the highest score at rank 1", entries[0]?.score === 12, JSON.stringify(entries[0]));
+  assert("drops lower-ranked entries beyond the top 10", entries[9]?.score === 3, JSON.stringify(entries[9]));
+}
+{
+  const tiedRows = [
+    {
+      name: "g/voidrunner3d/alpha/record",
+      value: serializeRecordValue("alpha", {
+        easy: { score: 50, updatedAt: 100, displayName: "ALPHA" },
+        normal: null,
+        hard: null
+      })
+    },
+    {
+      name: "g/voidrunner3d/bravo/record",
+      value: serializeRecordValue("bravo", {
+        easy: { score: 50, updatedAt: 200, displayName: "BRAVO" },
+        normal: null,
+        hard: null
+      })
+    }
+  ];
+
+  const entries = aggregateLeaderboardRows(tiedRows, "easy");
+  assert("uses updatedAt to break score ties", entries[0]?.handle === "bravo", JSON.stringify(entries));
+}
+
 console.log(`\n════════════════════════════════`);
 console.log(`Results: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

@@ -2,7 +2,7 @@
 
 ## Overview
 - Void Runner 3D is a browser-friendly, 3D space dodging experience that runs entirely inside a single HTML file using Three.js, procedural audio, and localStorage for high-score persistence, while targeting smooth 60 FPS gameplay across desktop and mobile browsers.
-- Players survive asteroid fields across three difficulty tiers, collect power-ups, and aim for chain-aware leaderboard updates through a dedicated relay so the local best remains separate from on-chain rankings.
+- Players survive asteroid fields across three difficulty tiers, collect power-ups, and interact with a player-owned leaderboard so that the previous shared leaderboard model is no longer the live design and every score is tied to a registered handle.
 
 ## Table of Contents
 1. [Installation](#installation)
@@ -26,9 +26,12 @@
 - When the run ends, the overlay displays final score details and allows submitting results to the chain leaderboard through the relay, which keeps localStorage-based bests separate from on-chain top-ten data.
 - Touch-friendly controls (keyboard, mouse, mobile touch) are supported, and the local relay reports statuses for chain and health endpoints to keep players informed of backend availability .
 
-## Technical Details
+-## Technical Details
 - The browser client remains a single self-contained file (`index.html`) with inline markup, styling, and script so no build system is required; developers can open it directly or through any static host.
-- Blockchain leaderboard handling runs through `leaderboard-relay.js`, which only exposes `GET /api/health`, `GET /api/leaderboard`, and `POST /api/leaderboard/submit`, maps difficulties to on-chain names, and limits results to ten entries per difficulty.
+- Blockchain leaderboard handling runs through `leaderboard-relay.js`, which now implements a player-owned leaderboard architecture rather than the old shared leaderboard table.
+- The relay/API surface exposes health, registration, and per-player scoring endpoints: `GET /api/health`, `GET /api/player/status`, `POST /api/player/register`, `GET /api/leaderboard`, and `POST /api/leaderboard/submit`.
+- Players must register before submitting scores; registration associates a handle namespace (`p/<handle>`) that the relay enforces for subsequent submissions, and each submitted score updates only that player’s own `g/voidrunner3d/<handle>/record` entry.
+- Difficulty support remains `easy`, `normal`, and `hard`, and top-ten standings are derived by scanning/querying every `g/voidrunner3d/` record on-chain, aggregating the best scores per difficulty from registered players.
 - The relay depends on Node.js 18+, forwards requests to the SpaceXpanse ROD JSON-RPC node, and preserves localStorage bests independently while writing top-ten data on-chain.
 - Procedural audio uses Web Audio API, and Three.js r128 renders the 3D scene; local performance patterns follow a MENU → PLAYING → GAME_OVER → PAUSED state machine with object pooling for efficiency.
 

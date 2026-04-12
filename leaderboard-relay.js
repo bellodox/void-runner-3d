@@ -37,14 +37,19 @@ const RELAY_PORT = 8787;
 const RPC_URL = "http://127.0.0.1:11999/";
 const MAX_ENTRIES = 10;
 const MAX_RETRIES = 3;
-const MAX_NAME_LENGTH = 6;
+const MAX_DISPLAY_NAME_LENGTH = 6;
+const MIN_HANDLE_LENGTH = 3;
+const MAX_HANDLE_LENGTH = 24;
 const MAX_SCORE_SECONDS = 86400;
 const RPC_TIMEOUT_MS = 10000;
+const SCAN_PAGE_SIZE = 100;
+const SCAN_MAX_PAGES = 30;
+const GAME_PREFIX = "g/voidrunner3d/";
 
-const nameByDifficulty = Object.freeze({
-  easy: "d/voidrunner3d/easy",
-  normal: "d/voidrunner3d/normal",
-  hard: "d/voidrunner3d/hard"
+const difficultyKeys = Object.freeze({
+  easy: true,
+  normal: true,
+  hard: true
 });
 
 function setCors(response) {
@@ -112,14 +117,29 @@ async function callRpc(method, params) {
 }
 
 function sanitizeDifficulty(difficulty) {
-  return Object.prototype.hasOwnProperty.call(nameByDifficulty, difficulty) ? difficulty : null;
+  return Object.prototype.hasOwnProperty.call(difficultyKeys, difficulty) ? difficulty : null;
 }
 
-function sanitizePlayerName(rawName) {
+function sanitizeDisplayName(rawName) {
   if (typeof rawName !== "string") return null;
-  const normalizedName = rawName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_NAME_LENGTH);
-  if (!normalizedName || normalizedName.length > MAX_NAME_LENGTH) return null;
+  const normalizedName = rawName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_DISPLAY_NAME_LENGTH);
+  if (!normalizedName || normalizedName.length > MAX_DISPLAY_NAME_LENGTH) return null;
   return normalizedName;
+}
+
+function sanitizeHandle(rawHandle) {
+  if (typeof rawHandle !== "string") return null;
+  const normalizedHandle = rawHandle.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
+  if (normalizedHandle.length < MIN_HANDLE_LENGTH || normalizedHandle.length > MAX_HANDLE_LENGTH) return null;
+  return normalizedHandle;
+}
+
+function getIdentityNameForHandle(handle) {
+  return `p/${handle}`;
+}
+
+function getRecordNameForHandle(handle) {
+  return `${GAME_PREFIX}${handle}/record`;
 }
 
 function sanitizeScore(rawScore) {
@@ -129,89 +149,181 @@ function sanitizeScore(rawScore) {
   return Math.round(parsedScore * 1000) / 1000;
 }
 
-function parseOnChainEntries(value) {
-  if (typeof value !== "string" || value.length === 0) return [];
+function parseRecordValue(value, expectedHandle) {
+  if (typeof value !== "string" || value.length === 0) return null;
 
   let parsedValue;
   try {
     parsedValue = JSON.parse(value);
   } catch {
-    return [];
+    return null;
   }
 
-  const rawEntries = Array.isArray(parsedValue)
-    ? parsedValue
-    : (parsedValue && Array.isArray(parsedValue.entries) ? parsedValue.entries : []);
+  if (!parsedValue || typeof parsedValue !== "object") return null;
+  const storedHandle = sanitizeHandle(parsedValue.handle);
+  if (!storedHandle || storedHandle !== expectedHandle) return null;
 
-  const normalizedEntries = [];
-  for (const candidateEntry of rawEntries) {
-    if (!Array.isArray(candidateEntry) || candidateEntry.length < 2) continue;
-    const entryName = sanitizePlayerName(candidateEntry[0]);
-    const entryScore = sanitizeScore(candidateEntry[1]);
-    const entryTimestamp = Number(candidateEntry[2]) || 0;
-    if (!entryName || entryScore === null) continue;
-    normalizedEntries.push([entryName, entryScore, entryTimestamp]);
+  const scoresObject = parsedValue.scores && typeof parsedValue.scores === "object" ? parsedValue.scores : {};
+  const normalizedScores = {};
+
+  for (const difficulty of Object.keys(difficultyKeys)) {
+    const rawScoreEntry = scoresObject[difficulty];
+    if (!rawScoreEntry || typeof rawScoreEntry !== "object") {
+      normalizedScores[difficulty] = null;
+      continue;
+    }
+
+    const scoreValue = sanitizeScore(rawScoreEntry.score);
+    if (scoreValue === null) {
+      normalizedScores[difficulty] = null;
+      continue;
+    }
+
+    const timestampValue = Number(rawScoreEntry.updatedAt) || 0;
+    const storedDisplayName = sanitizeDisplayName(rawScoreEntry.displayName);
+    normalizedScores[difficulty] = {
+      score: scoreValue,
+      updatedAt: timestampValue,
+      displayName: storedDisplayName || storedHandle.toUpperCase()
+    };
   }
 
-  normalizedEntries.sort((leftEntry, rightEntry) => {
-    if (rightEntry[1] !== leftEntry[1]) return rightEntry[1] - leftEntry[1];
-    return rightEntry[2] - leftEntry[2];
-  });
-
-  return normalizedEntries.slice(0, MAX_ENTRIES);
+  return {
+    handle: storedHandle,
+    scores: normalizedScores
+  };
 }
 
-function serializeOnChainEntries(entries) {
+function serializeRecordValue(handle, scoresByDifficulty) {
+  const persistedScores = {};
+  for (const difficulty of Object.keys(difficultyKeys)) {
+    const scoreEntry = scoresByDifficulty[difficulty];
+    if (!scoreEntry) continue;
+    persistedScores[difficulty] = {
+      score: scoreEntry.score,
+      updatedAt: scoreEntry.updatedAt,
+      displayName: scoreEntry.displayName
+    };
+  }
+
   return JSON.stringify({
-    entries: entries.map((entry) => [entry[0], entry[1], entry[2]])
+    version: 1,
+    game: "voidrunner3d",
+    handle,
+    scores: persistedScores
   });
 }
 
-async function readLeaderboardState(difficulty) {
-  const onChainName = nameByDifficulty[difficulty];
+async function readName(name) {
   try {
-    const result = await callRpc("name_show", [onChainName]);
-    const parsedEntries = parseOnChainEntries(result.value || "");
-    return { exists: true, onChainName, entries: parsedEntries };
+    const result = await callRpc("name_show", [name]);
+    return { exists: true, value: typeof result.value === "string" ? result.value : "" };
   } catch (error) {
     if (error && (error.code === -4 || error.code === -5 || error.code === -8)) {
-      return { exists: false, onChainName, entries: [] };
+      return { exists: false, value: "" };
     }
     throw error;
   }
 }
 
-function mergeEntries(existingEntries, newName, newScore) {
-  const mergedEntries = (Array.isArray(existingEntries) ? existingEntries : []).filter((entry) => entry[0] !== newName);
-  mergedEntries.push([newName, newScore, Date.now()]);
-  mergedEntries.sort((leftEntry, rightEntry) => {
-    if (rightEntry[1] !== leftEntry[1]) return rightEntry[1] - leftEntry[1];
-    return rightEntry[2] - leftEntry[2];
+async function ensureNameRegistered(name, fallbackValue) {
+  const currentNameState = await readName(name);
+  if (currentNameState.exists) return;
+  try {
+    await callRpc("name_register", [name, fallbackValue]);
+  } catch (error) {
+    const rpcMessage = String(error && error.message ? error.message : "").toLowerCase();
+    const alreadyPending = rpcMessage.includes("pending registration") || rpcMessage.includes("already exists");
+    if (!alreadyPending) throw error;
+  }
+}
+
+async function registerPlayerHandle(handle, displayName) {
+  const identityName = getIdentityNameForHandle(handle);
+  const recordName = getRecordNameForHandle(handle);
+
+  const initialRecord = {
+    easy: null,
+    normal: null,
+    hard: null
+  };
+
+  const identityValue = JSON.stringify({
+    version: 1,
+    game: "voidrunner3d",
+    handle,
+    recordName,
+    displayName
   });
-  return mergedEntries.slice(0, MAX_ENTRIES);
+
+  await ensureNameRegistered(identityName, identityValue);
+  await ensureNameRegistered(recordName, serializeRecordValue(handle, initialRecord));
+
+  return {
+    handle,
+    identityName,
+    recordName
+  };
 }
 
-function entryExists(entries, expectedName, expectedScore) {
-  return entries.some((entry) => entry[0] === expectedName && Math.abs(entry[1] - expectedScore) < 0.0005);
+async function readPlayerStatus(handle) {
+  const identityName = getIdentityNameForHandle(handle);
+  const recordName = getRecordNameForHandle(handle);
+  const identityState = await readName(identityName);
+  const recordState = await readName(recordName);
+  const parsedRecord = recordState.exists ? parseRecordValue(recordState.value, handle) : null;
+
+  return {
+    handle,
+    identityName,
+    recordName,
+    identityRegistered: identityState.exists,
+    recordRegistered: recordState.exists,
+    canSubmit: identityState.exists && recordState.exists,
+    record: parsedRecord
+  };
 }
 
-async function submitLeaderboardScore(difficulty, playerName, score) {
+async function submitLeaderboardScore(handle, difficulty, score, displayName) {
+  const recordName = getRecordNameForHandle(handle);
+
   for (let attemptNumber = 0; attemptNumber < MAX_RETRIES; attemptNumber++) {
-    const currentState = await readLeaderboardState(difficulty);
-    const mergedEntries = mergeEntries(currentState.entries, playerName, score);
-    const serializedValue = serializeOnChainEntries(mergedEntries);
+    const currentState = await readName(recordName);
+    if (!currentState.exists) {
+      throw new Error("Player record is not registered. Register first.");
+    }
+
+    const parsedRecord = parseRecordValue(currentState.value, handle) || {
+      handle,
+      scores: { easy: null, normal: null, hard: null }
+    };
+
+    const nextScores = {
+      easy: parsedRecord.scores.easy,
+      normal: parsedRecord.scores.normal,
+      hard: parsedRecord.scores.hard
+    };
+
+    const existingDifficultyScore = nextScores[difficulty];
+    const nowTimestamp = Date.now();
+
+    if (!existingDifficultyScore || score >= existingDifficultyScore.score) {
+      nextScores[difficulty] = {
+        score,
+        updatedAt: nowTimestamp,
+        displayName
+      };
+    }
+
+    const serializedValue = serializeRecordValue(handle, nextScores);
 
     try {
-      if (currentState.exists) {
-        await callRpc("name_update", [currentState.onChainName, serializedValue]);
-      } else {
-        await callRpc("name_register", [currentState.onChainName, serializedValue]);
-      }
+      await callRpc("name_update", [recordName, serializedValue]);
     } catch (error) {
       const rpcMessage = String(error && error.message ? error.message : "").toLowerCase();
-      const isPendingNameState = rpcMessage.includes("pending registration") || rpcMessage.includes("pending update");
+      const isPendingNameState = rpcMessage.includes("pending update");
       if (isPendingNameState) {
-        return mergedEntries;
+        return nextScores;
       }
       if (attemptNumber >= MAX_RETRIES - 1) {
         throw error;
@@ -220,28 +332,112 @@ async function submitLeaderboardScore(difficulty, playerName, score) {
     }
 
     try {
-      const verifyState = await readLeaderboardState(difficulty);
-      if (entryExists(verifyState.entries, playerName, score)) {
-        return verifyState.entries;
+      const verifyState = await readName(recordName);
+      if (verifyState.exists) {
+        const verifyRecord = parseRecordValue(verifyState.value, handle);
+        if (verifyRecord) return verifyRecord.scores;
       }
     } catch {
       // Ignore transient verification errors and rely on write success fallback.
     }
 
     // Name operations can remain pending before becoming visible via name_show.
-    // If write RPC call succeeded, report success immediately using merged entries.
-    return mergedEntries;
+    // If write RPC call succeeded, report success immediately using computed scores.
+    return nextScores;
   }
 
   throw new Error("Failed to persist leaderboard score after retries");
 }
 
-function toApiEntries(entries) {
-  return entries.map((entry, index) => ({
+async function scanRecordNamesByPrefix(prefix) {
+  const matchedNames = [];
+  let cursor = prefix;
+
+  for (let pageIndex = 0; pageIndex < SCAN_MAX_PAGES; pageIndex++) {
+    const pageResult = await callRpc("name_scan", [cursor, SCAN_PAGE_SIZE]);
+    const rows = Array.isArray(pageResult) ? pageResult : [];
+    if (!rows.length) break;
+
+    let sawOutOfPrefix = false;
+    for (const row of rows) {
+      const name = typeof row?.name === "string" ? row.name : "";
+      if (!name.startsWith(prefix)) {
+        sawOutOfPrefix = true;
+        continue;
+      }
+      matchedNames.push(row);
+    }
+
+    if (rows.length < SCAN_PAGE_SIZE || sawOutOfPrefix) break;
+    const lastName = typeof rows[rows.length - 1]?.name === "string" ? rows[rows.length - 1].name : "";
+    if (!lastName || lastName < cursor) break;
+    cursor = `${lastName}\u0000`;
+  }
+
+  return matchedNames;
+}
+
+async function getLeaderboardEntriesForDifficulty(difficulty) {
+  const scannedRows = await scanRecordNamesByPrefix(GAME_PREFIX);
+  const candidateEntries = [];
+
+  for (const row of scannedRows) {
+    const onChainName = typeof row?.name === "string" ? row.name : "";
+    const onChainValue = typeof row?.value === "string" ? row.value : "";
+    if (!onChainName.endsWith("/record")) continue;
+
+    const handleFromName = sanitizeHandle(onChainName.slice(GAME_PREFIX.length, -"/record".length));
+    if (!handleFromName) continue;
+
+    const parsedRecord = parseRecordValue(onChainValue, handleFromName);
+    if (!parsedRecord) continue;
+
+    const selectedDifficultyScore = parsedRecord.scores[difficulty];
+    if (!selectedDifficultyScore) continue;
+
+    candidateEntries.push({
+      handle: handleFromName,
+      name: selectedDifficultyScore.displayName || handleFromName.toUpperCase(),
+      score: selectedDifficultyScore.score,
+      updatedAt: selectedDifficultyScore.updatedAt || 0
+    });
+  }
+
+  candidateEntries.sort((leftEntry, rightEntry) => {
+    if (rightEntry.score !== leftEntry.score) return rightEntry.score - leftEntry.score;
+    return rightEntry.updatedAt - leftEntry.updatedAt;
+  });
+
+  return candidateEntries.slice(0, MAX_ENTRIES).map((entry, index) => ({
     rank: index + 1,
-    name: entry[0],
-    score: entry[1]
+    handle: entry.handle,
+    name: entry.name,
+    score: entry.score
   }));
+}
+
+function toApiPlayerStatus(status) {
+  const scores = {};
+  for (const difficulty of Object.keys(difficultyKeys)) {
+    const scoreEntry = status.record?.scores?.[difficulty] || null;
+    scores[difficulty] = scoreEntry
+      ? {
+          score: scoreEntry.score,
+          updatedAt: scoreEntry.updatedAt,
+          displayName: scoreEntry.displayName
+        }
+      : null;
+  }
+
+  return {
+    handle: status.handle,
+    identityName: status.identityName,
+    recordName: status.recordName,
+    identityRegistered: status.identityRegistered,
+    recordRegistered: status.recordRegistered,
+    canSubmit: status.canSubmit,
+    scores
+  };
 }
 
 async function readRequestBody(request) {
@@ -283,11 +479,52 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      const state = await readLeaderboardState(difficulty);
+      const entries = await getLeaderboardEntriesForDifficulty(difficulty);
       sendJson(response, 200, {
         ok: true,
         difficulty,
-        entries: toApiEntries(state.entries)
+        entries
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/player/status") {
+      const handle = sanitizeHandle(requestUrl.searchParams.get("handle") || "");
+      if (!handle) {
+        sendJson(response, 400, { ok: false, error: "Invalid handle" });
+        return;
+      }
+
+      const playerStatus = await readPlayerStatus(handle);
+      sendJson(response, 200, {
+        ok: true,
+        player: toApiPlayerStatus(playerStatus)
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/player/register") {
+      const rawBody = await readRequestBody(request);
+      let parsedBody;
+      try {
+        parsedBody = JSON.parse(rawBody || "{}");
+      } catch {
+        sendJson(response, 400, { ok: false, error: "Invalid JSON body" });
+        return;
+      }
+
+      const handle = sanitizeHandle(parsedBody.handle);
+      const displayName = sanitizeDisplayName(parsedBody.displayName || parsedBody.handle || "");
+      if (!handle) {
+        sendJson(response, 400, { ok: false, error: "Invalid handle" });
+        return;
+      }
+
+      await registerPlayerHandle(handle, displayName || handle.toUpperCase());
+      const playerStatus = await readPlayerStatus(handle);
+      sendJson(response, 200, {
+        ok: true,
+        player: toApiPlayerStatus(playerStatus)
       });
       return;
     }
@@ -303,19 +540,28 @@ const server = http.createServer(async (request, response) => {
       }
 
       const difficulty = sanitizeDifficulty(String(parsedBody.difficulty || "").toLowerCase());
-      const playerName = sanitizePlayerName(parsedBody.name);
+      const handle = sanitizeHandle(parsedBody.handle);
+      const displayName = sanitizeDisplayName(parsedBody.displayName || parsedBody.name || parsedBody.handle || "");
       const score = sanitizeScore(parsedBody.score);
 
-      if (!difficulty || !playerName || score === null) {
-        sendJson(response, 400, { ok: false, error: "Invalid difficulty, name, or score" });
+      if (!difficulty || !handle || !displayName || score === null) {
+        sendJson(response, 400, { ok: false, error: "Invalid difficulty, handle, display name, or score" });
         return;
       }
 
-      const updatedEntries = await submitLeaderboardScore(difficulty, playerName, score);
+      const playerStatus = await readPlayerStatus(handle);
+      if (!playerStatus.canSubmit) {
+        sendJson(response, 409, { ok: false, error: "Player is not fully registered" });
+        return;
+      }
+
+      await submitLeaderboardScore(handle, difficulty, score, displayName);
+      const updatedEntries = await getLeaderboardEntriesForDifficulty(difficulty);
       sendJson(response, 200, {
         ok: true,
         difficulty,
-        entries: toApiEntries(updatedEntries)
+        entries: updatedEntries,
+        player: toApiPlayerStatus(await readPlayerStatus(handle))
       });
       return;
     }

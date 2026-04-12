@@ -1,4 +1,4 @@
-# Changelog — 2026-04-10
+# Changelog — 2026-04-12
 
-## [Medium] Documentation Procedures
-- Defined a changelog entry format with timestamped, priority-bucketed descriptions so future updates follow this audit-ready structure.
+## [High] Player-owned leaderboard rollout
+- Documented the new registration-aware relay API, namespace naming (`p/<handle>` / `g/voidrunner3d/<handle>/record`), per-player record submission, and derived leaderboard aggregation over `g/voidrunner3d/` entries.
