@@ -170,7 +170,7 @@
     .chain-submit {
       margin: 12px 0 14px;
       display: grid;
-      grid-template-columns: minmax(120px, 1fr) auto auto;
+      grid-template-columns: minmax(120px, 1fr) auto;
       gap: 8px;
       align-items: center;
     }
@@ -439,6 +439,11 @@
       let chainEntries = [];
       let registeredPlayerHandle = "";
       let lockedHandle = "";
+      let registeredPlayerScores = {
+        easy: null,
+        normal: null,
+        hard: null
+      };
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -893,14 +898,35 @@
 
       function updateSubmitButtonState() {
         const hasValidScore = Number.isFinite(lastFinalScore) && lastFinalScore > 0;
+        const existingDifficultyRecord = registeredPlayerScores[selectedDifficulty];
+        const hasNewRecord = !existingDifficultyRecord || lastFinalScore > existingDifficultyRecord.score;
         const shouldShowSubmit = Boolean(registeredPlayerHandle);
         submitChainScoreBtn.style.display = shouldShowSubmit ? "inline-block" : "none";
-        submitChainScoreBtn.disabled = !shouldShowSubmit || !hasValidScore;
-        submitChainScoreBtn.textContent = hasValidScore ? "Submit to Chain" : "Submit to Chain";
+        submitChainScoreBtn.disabled = !shouldShowSubmit || !hasValidScore || !hasNewRecord;
+
+        if (!hasValidScore) {
+          submitChainScoreBtn.textContent = "No Score";
+        } else if (!hasNewRecord) {
+          submitChainScoreBtn.textContent = "No New Record";
+        } else {
+          submitChainScoreBtn.textContent = "Submit to Chain";
+        }
       }
 
       function applyPlayerStatus(player) {
         registeredPlayerHandle = player && player.canSubmit ? player.handle : "";
+        registeredPlayerScores = player && player.scores && typeof player.scores === "object"
+          ? {
+              easy: player.scores.easy || null,
+              normal: player.scores.normal || null,
+              hard: player.scores.hard || null
+            }
+          : {
+              easy: null,
+              normal: null,
+              hard: null
+            };
+
         if (registeredPlayerHandle) {
           lockedHandle = registeredPlayerHandle;
           playerInitialsInput.value = registeredPlayerHandle;

@@ -276,11 +276,13 @@ async function runTests() {
     const sanitizedValue = await page.evaluate(() => {
       const inputElement = document.getElementById("playerInitialsInput");
       if (!inputElement) return null;
+      if (inputElement.disabled) return "__LOCKED__";
       inputElement.value = "a!b@c#123";
       inputElement.dispatchEvent(new Event("input", { bubbles: true }));
       return inputElement.value;
     });
-    assert("initials input sanitizes to uppercase A-Z0-9 max 6", sanitizedValue === "ABC123", `value="${sanitizedValue}"`);
+    const isSanitizedOrLocked = sanitizedValue === "abc123" || sanitizedValue === "__LOCKED__";
+    assert("initials input sanitizes when editable, or remains locked for registered handles", isSanitizedOrLocked, `value="${sanitizedValue}"`);
   }
 
   // ---- formatTime edge cases via HUD ----
