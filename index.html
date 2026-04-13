@@ -483,7 +483,8 @@
       let useMouseControl = true;
       let touchActive = false;
 
-      let startTimestamp = 0;
+      let elapsedBeforePauseSeconds = 0;
+      let playResumeTimestamp = 0;
       let survivalTime = 0;
       let highScore = 0;
 
@@ -1623,6 +1624,7 @@
         menuOverlay.classList.remove("hidden");
         gameOverOverlay.classList.add("hidden");
         pauseBadge.style.display = "none";
+        pauseBtn.textContent = "PAUSE";
         fadeOverlay.style.background = "rgba(0,0,0,0)";
         shipRoot.visible = true;
         setEngineAudioLevel(0);
@@ -1633,13 +1635,15 @@
         playBlip(620, 0.07, "square", 0.05);
         resetWorld();
         loadHighScore();
-        startTimestamp = performance.now();
+        elapsedBeforePauseSeconds = 0;
+        playResumeTimestamp = performance.now();
         survivalTime = 0;
         gameState = STATE.PLAYING;
         hud.classList.remove("hidden");
         menuOverlay.classList.add("hidden");
         gameOverOverlay.classList.add("hidden");
         pauseBadge.style.display = "none";
+        pauseBtn.textContent = "PAUSE";
         updateHud();
       }
 
@@ -1665,15 +1669,23 @@
 
       function togglePause() {
         if (gameState === STATE.PLAYING) {
+          elapsedBeforePauseSeconds = survivalTime;
           previousPlayState = gameState;
           gameState = STATE.PAUSED;
           pauseBadge.style.display = "block";
           pauseBtn.textContent = "RESUME";
           setEngineAudioLevel(0);
         } else if (gameState === STATE.PAUSED) {
+          playResumeTimestamp = performance.now();
           gameState = previousPlayState;
           pauseBadge.style.display = "none";
           pauseBtn.textContent = "PAUSE";
+        }
+      }
+
+      function pauseForFocusLoss() {
+        if (gameState === STATE.PLAYING) {
+          togglePause();
         }
       }
 
@@ -1728,6 +1740,16 @@
           renderer.setSize(window.innerWidth, window.innerHeight);
           camera.aspect = window.innerWidth / window.innerHeight;
           camera.updateProjectionMatrix();
+        });
+
+        window.addEventListener("blur", () => {
+          pauseForFocusLoss();
+        });
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            pauseForFocusLoss();
+          }
         });
 
         for (const btn of difficultyButtons) {
@@ -1795,7 +1817,7 @@
           const deltaSeconds = rawDelta * timeScale;
 
           if (gameState === STATE.PLAYING) {
-            survivalTime = (now - startTimestamp) / 1000;
+            survivalTime = elapsedBeforePauseSeconds + (now - playResumeTimestamp) / 1000;
             updateStars(deltaSeconds);
             updateShip(deltaSeconds);
             updateAsteroids(deltaSeconds);
