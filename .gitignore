@@ -1,5 +1,6 @@
 *.~*
 #*.exe
 test_*
+admin-
 .kilocode
 .env

@@ -51,6 +51,8 @@
     .panel {
       pointer-events: auto;
       width: min(90vw, 680px);
+      max-height: min(92vh, 920px);
+      overflow-y: auto;
       background: linear-gradient(180deg, rgba(15, 26, 48, 0.85), rgba(8, 12, 26, 0.9));
       border: 1px solid var(--panel-border);
       border-radius: 16px;
@@ -61,6 +63,15 @@
       transform: translateY(0);
       opacity: 1;
       transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .panel::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .panel::-webkit-scrollbar-thumb {
+      background: rgba(121, 215, 255, 0.35);
+      border-radius: 999px;
     }
 
     .panel h1 {
@@ -288,6 +299,23 @@
 
     .recent-winners-list li:last-child {
       border-bottom: none;
+    }
+
+    .recent-winners-list li.empty {
+      grid-template-columns: 1fr;
+      color: #a6c6dd;
+      border-bottom: none;
+      padding: 2px 0 0;
+    }
+
+    .pot-board.hidden {
+      display: none;
+    }
+
+    .prize-board.hidden,
+    .countdown-chip.hidden,
+    .recent-winners-board.hidden {
+      display: none;
     }
 
     .chain-board h2 {
@@ -592,7 +620,7 @@
       </div>
       <button id="startBtn" class="action-btn">Start Game</button>
 
-      <div id="menuHourlyCountdown" class="countdown-chip" aria-live="polite">
+      <div id="menuHourlyCountdown" class="countdown-chip hidden" aria-live="polite">
         <p class="countdown-label">Hourly Round Window</p>
         <p id="menuHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
       </div>
@@ -607,7 +635,7 @@
         </div>
       </div>
 
-      <div class="recent-winners-board" aria-live="polite">
+      <div class="recent-winners-board hidden" aria-live="polite">
         <h2>Recent Winners</h2>
         <p id="recentWinnersStatusText" class="recent-winners-status">Loading recent winners...</p>
         <ol id="recentWinnersList" class="recent-winners-list"></ol>
@@ -627,11 +655,11 @@
       <p id="finalScoreText" class="subtitle">Final Score: 00:00.000</p>
       <p id="scoreBreakdownText" class="subtitle">Survival 00:00.000 · Bonus 00:00.000 · Total 00:00.000</p>
       <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
-      <div class="prize-board" aria-live="polite">
+      <div class="prize-board hidden" aria-live="polite">
         <h2>Latest Hourly Round Winner</h2>
         <p id="latestHourlyPrizeText">Loading latest hourly round winner...</p>
       </div>
-      <div id="gameOverHourlyCountdown" class="countdown-chip" aria-live="polite">
+      <div id="gameOverHourlyCountdown" class="countdown-chip hidden" aria-live="polite">
         <p class="countdown-label">Hourly Round Window</p>
         <p id="gameOverHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
       </div>
@@ -721,10 +749,6 @@
       const submitChainScoreBtn = document.getElementById("submitChainScoreBtn");
       const submitChainStatusText = document.getElementById("submitChainStatusText");
       const latestHourlyPrizeText = document.getElementById("latestHourlyPrizeText");
-      const menuHourlyCountdown = document.getElementById("menuHourlyCountdown");
-      const gameOverHourlyCountdown = document.getElementById("gameOverHourlyCountdown");
-      const menuHourlyCountdownText = document.getElementById("menuHourlyCountdownText");
-      const gameOverHourlyCountdownText = document.getElementById("gameOverHourlyCountdownText");
       const menuPotStatusText = document.getElementById("menuPotStatusText");
       const menuPotBalanceText = document.getElementById("menuPotBalanceText");
       const menuPotAddressInput = document.getElementById("menuPotAddressInput");
@@ -738,8 +762,6 @@
       const RELAY_BASE_URL = "http://127.0.0.1:8787/api";
       const PLAYER_HANDLE_STORAGE_KEY = "voidrunner_player_handle";
       const allowedDifficultyKeys = new Set(["easy", "normal", "hard"]);
-      const HOURLY_URGENCY_BLOCK_THRESHOLD = 10;
-      const APPROX_SECONDS_PER_BLOCK = 30;
       const RECENT_WINNERS_PRIZE_TYPES = Object.freeze(["hourly", "daily", "weekly"]);
       const MAX_RECENT_WINNERS = 3;
 
@@ -1334,6 +1356,7 @@
 
         if (!entries.length) {
           const emptyRow = document.createElement("li");
+          emptyRow.className = "empty";
           emptyRow.textContent = "No recent winners yet.";
           recentWinnersList.appendChild(emptyRow);
           return;
@@ -1365,57 +1388,8 @@
       }
 
       async function loadRecentWinners() {
-        setRecentWinnersStatus("Loading recent winners...", "#9cc8e2");
-
-        try {
-          const winnerRows = [];
-
-          for (const prizeType of RECENT_WINNERS_PRIZE_TYPES) {
-            const response = await fetch(`${RELAY_BASE_URL}/prizes/latest?type=${encodeURIComponent(prizeType)}`);
-            if (response.status === 404) continue;
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const payload = await response.json();
-            const latestPrize = getLatestPrizePayload(payload);
-            if (!latestPrize || typeof latestPrize !== "object") continue;
-
-            winnerRows.push({
-              type: prizeType,
-              timestamp: getPrizeTimestamp(latestPrize),
-              prize: latestPrize
-            });
-          }
-
-          winnerRows.sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp);
-          const latestThreeWinners = winnerRows.slice(0, MAX_RECENT_WINNERS);
-          renderRecentWinners(latestThreeWinners);
-
-          if (latestThreeWinners.length) {
-            setRecentWinnersStatus("Latest winners from hourly/daily/weekly round windows.", "#a6c6dd");
-          } else {
-            setRecentWinnersStatus("No round winner records yet.", "#a6c6dd");
-          }
-        } catch {
-          renderRecentWinners([]);
-          setRecentWinnersStatus("Recent winners unavailable (relay offline).", "#ffb0b0");
-        }
-      }
-
-      function formatApproxTimeFromBlocks(blocksRemainingValue) {
-        const safeBlocksRemaining = Math.max(0, Math.floor(Number(blocksRemainingValue) || 0));
-        const totalApproximateMinutes = Math.round((safeBlocksRemaining * APPROX_SECONDS_PER_BLOCK) / 60);
-        if (totalApproximateMinutes < 60) {
-          return `~${totalApproximateMinutes}m`;
-        }
-        const hoursPart = Math.floor(totalApproximateMinutes / 60);
-        const minutesPart = totalApproximateMinutes % 60;
-        return minutesPart > 0 ? `~${hoursPart}h ${minutesPart}m` : `~${hoursPart}h`;
-      }
-
-      function setHourlyCountdownDisplay(text, isUrgent) {
-        menuHourlyCountdownText.textContent = text;
-        gameOverHourlyCountdownText.textContent = text;
-        menuHourlyCountdown.classList.toggle("urgent", isUrgent);
-        gameOverHourlyCountdown.classList.toggle("urgent", isUrgent);
+        setRecentWinnersStatus("Recent winners temporarily disabled in MVP.", "#a6c6dd");
+        renderRecentWinners([]);
       }
 
       function setMenuPotStatus(statusLabel, statusColor, balanceLabel, fundingAddress, targetLabel) {
@@ -1438,51 +1412,11 @@
       }
 
       async function loadHourlyPrizeWindowStatus() {
-        setHourlyCountdownDisplay("Loading hourly countdown...", false);
-
-        try {
-          const response = await fetch(`${RELAY_BASE_URL}/prize-window/status?type=hourly`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-          const payload = await response.json();
-          const blocksRemaining = Math.max(0, Math.floor(Number(payload?.blocksRemaining) || 0));
-          const percentComplete = Number(payload?.percentComplete);
-          const percentText = Number.isFinite(percentComplete) ? `${Math.max(0, Math.min(100, Math.round(percentComplete)))}%` : "--";
-          const approximateTimeText = formatApproxTimeFromBlocks(blocksRemaining);
-          const isUrgent = blocksRemaining < HOURLY_URGENCY_BLOCK_THRESHOLD;
-
-          setHourlyCountdownDisplay(
-            `Ends in ${blocksRemaining} blocks (${approximateTimeText}) • ${percentText} complete`,
-            isUrgent
-          );
-        } catch {
-          setHourlyCountdownDisplay("Hourly countdown unavailable (relay offline).", false);
-        }
+        return;
       }
 
       async function loadLatestHourlyWinner() {
-        setLatestHourlyPrizeText("Loading latest hourly round winner...", "#9cc8e2");
-
-        try {
-          const response = await fetch(`${RELAY_BASE_URL}/prizes/latest?type=hourly`);
-
-          if (response.status === 404) {
-            setLatestHourlyPrizeText("No hourly round winner yet.", "#a6c6dd");
-            return;
-          }
-
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-          const payload = await response.json();
-          const latestPrize = getLatestPrizePayload(payload);
-          const winnerHandle = getPrizeWinnerHandle(latestPrize);
-          const winnerScore = getPrizeWinnerScore(latestPrize);
-          const winnerDifficulty = getPrizeWinnerDifficulty(latestPrize);
-          const payoutStatus = getPrizePayoutStatus(latestPrize);
-          setLatestHourlyPrizeText(`Round winner: ${winnerHandle} | Score: ${winnerScore} | Difficulty: ${winnerDifficulty} | Payout: ${payoutStatus.label}`, payoutStatus.color);
-        } catch {
-          setLatestHourlyPrizeText("Latest hourly round winner unavailable (relay offline).", "#ffb0b0");
-        }
+        setLatestHourlyPrizeText("Latest hourly winner temporarily disabled in MVP.", "#a6c6dd");
       }
 
       function applyPlayerStatus(player) {

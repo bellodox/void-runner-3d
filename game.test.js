@@ -66,81 +66,6 @@ async function runTests() {
   });
   const page = await context.newPage();
 
-  await page.route("http://127.0.0.1:8787/api/prize-window/status?type=hourly", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        type: "hourly",
-        currentBlockHeight: 12345,
-        currentWindowIndex: 102,
-        windowSize: 120,
-        blocksRemaining: 7,
-        percentComplete: 94.2
-      })
-    });
-  });
-
-  await page.route("http://127.0.0.1:8787/api/prizes/latest?type=hourly", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        type: "hourly",
-        strategy: "pointer",
-        prize: {
-          type: "hourly",
-          winner: "pilot-hour",
-          score: 44.321,
-          paid: true,
-          txid: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-          timestamp: 1710000300000
-        }
-      })
-    });
-  });
-
-  await page.route("http://127.0.0.1:8787/api/prizes/latest?type=daily", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        type: "daily",
-        strategy: "pointer",
-        prize: {
-          type: "daily",
-          winner: "pilot-day",
-          score: 55.432,
-          paid: false,
-          txid: null,
-          timestamp: 1710000600000
-        }
-      })
-    });
-  });
-
-  await page.route("http://127.0.0.1:8787/api/prizes/latest?type=weekly", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        type: "weekly",
-        strategy: "pointer",
-        prize: {
-          type: "weekly",
-          winner: "pilot-week",
-          score: 66.543,
-          paid: true,
-          txid: "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
-          timestamp: 1710000900000
-        }
-      })
-    });
-  });
-
   await page.route("http://127.0.0.1:8787/api/leaderboard/rank?handle=acepilot", async (route) => {
     await route.fulfill({
       status: 200,
@@ -245,20 +170,15 @@ async function runTests() {
     assert("chain status shows relay state", isOfflineOrLoading, `"${statusText}"`);
   }
 
-  // ---- Hourly countdown display ----
-  section("Hourly countdown display");
+  // ---- Round-only UI hidden (admin relay not ready) ----
+  section("Round-only UI hidden");
   {
-    await page.waitForTimeout(300);
-    const countdownText = await page.textContent("#menuHourlyCountdownText");
-    assert(
-      "menu shows hourly countdown with blocks and approximate time",
-      countdownText && countdownText.includes("Ends in 7 blocks") && countdownText.includes("~4m") && countdownText.includes("94% complete"),
-      `text="${countdownText}"`
-    );
+    const menuHourlyCountdownHidden = await page.locator("#menuHourlyCountdown.hidden").count();
+    assert("menu hourly countdown block is hidden", menuHourlyCountdownHidden === 1, `count=${menuHourlyCountdownHidden}`);
   }
   {
-    const isUrgent = await page.locator("#menuHourlyCountdown.urgent").count();
-    assert("menu hourly countdown applies urgency styling under low-block threshold", isUrgent === 1, `count=${isUrgent}`);
+    const recentWinnersHidden = await page.locator(".recent-winners-board.hidden").count();
+    assert("menu recent winners block is hidden", recentWinnersHidden === 1, `count=${recentWinnersHidden}`);
   }
 
   // ---- Main-menu round funding panel (MVP relay split) ----
@@ -286,35 +206,6 @@ async function runTests() {
       "menu round funding address input shows env-config message",
       potAddressValue === "Configured in .env (PRIZE_POT_ADDRESS)",
       `value="${potAddressValue}"`
-    );
-  }
-
-  // ---- Main-menu recent winners (Sprint 7.3 MVP) ----
-  section("Main-menu recent winners");
-  {
-    await page.waitForTimeout(300);
-    const recentWinnersStatusText = await page.textContent("#recentWinnersStatusText");
-    assert(
-      "recent winners status explains composed round source",
-      recentWinnersStatusText && recentWinnersStatusText.includes("hourly/daily/weekly") && recentWinnersStatusText.includes("round windows"),
-      `text="${recentWinnersStatusText}"`
-    );
-  }
-  {
-    const recentWinnersRows = await page.locator("#recentWinnersList li").allTextContents();
-    assert("recent winners renders up to three rows", recentWinnersRows.length === 3, `count=${recentWinnersRows.length}`);
-    assert(
-      "recent winners rows are sorted newest-first by timestamp",
-      recentWinnersRows[0]?.includes("WEEKLY") && recentWinnersRows[1]?.includes("DAILY") && recentWinnersRows[2]?.includes("HOURLY"),
-      JSON.stringify(recentWinnersRows)
-    );
-  }
-  {
-    const recentWinnersRows = await page.locator("#recentWinnersList li").allTextContents();
-    assert(
-      "recent winners include payout status and txid visibility when present",
-      recentWinnersRows[0]?.includes("PAID") && recentWinnersRows[0]?.includes("tx:") && recentWinnersRows[1]?.includes("PENDING"),
-      JSON.stringify(recentWinnersRows)
     );
   }
 
@@ -631,22 +522,11 @@ async function runTests() {
     const initialHandleValue = await page.$eval("#playerInitialsInput", (element) => element.value);
     assert("stored handle is available on game-over handle input", initialHandleValue === "acepilot", `value="${initialHandleValue}"`);
 
-    const latestHourlyWinnerText = await page.textContent("#latestHourlyPrizeText");
-    assert(
-      "game-over panel includes latest hourly winner section",
-      latestHourlyWinnerText && latestHourlyWinnerText.trim().length > 0,
-      `text="${latestHourlyWinnerText}"`
-    );
+    const gameOverLatestWinnerHidden = await page.locator("#gameOverOverlay .prize-board.hidden").count();
+    assert("game-over latest hourly winner block is hidden", gameOverLatestWinnerHidden === 1, `count=${gameOverLatestWinnerHidden}`);
 
-    const gameOverCountdownText = await page.textContent("#gameOverHourlyCountdownText");
-    assert(
-      "game-over panel includes hourly countdown",
-      gameOverCountdownText && gameOverCountdownText.includes("Ends in 7 blocks") && gameOverCountdownText.includes("~4m"),
-      `text="${gameOverCountdownText}"`
-    );
-
-    const gameOverUrgencyClassCount = await page.locator("#gameOverHourlyCountdown.urgent").count();
-    assert("game-over hourly countdown applies urgency styling under low-block threshold", gameOverUrgencyClassCount === 1, `count=${gameOverUrgencyClassCount}`);
+    const gameOverCountdownHidden = await page.locator("#gameOverHourlyCountdown.hidden").count();
+    assert("game-over hourly countdown block is hidden", gameOverCountdownHidden === 1, `count=${gameOverCountdownHidden}`);
 
     const featuredRowsCount = await page.locator("#featuredRankList li").count();
     assert("featured chart renders compact top-5 rows", featuredRowsCount === 5, `count=${featuredRowsCount}`);
