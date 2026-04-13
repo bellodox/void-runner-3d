@@ -163,7 +163,7 @@ async function runTests() {
   // ---- Pause / Resume ----
   section("Pause / Resume");
   {
-    await page.click("#pauseBtn");
+    await page.locator("#pauseBtn").click({ noWaitAfter: true });
     await page.waitForTimeout(150);
     const pauseBadgeVisible = await page.isVisible("#pauseBadge");
     assert("PAUSED badge shows after clicking Pause", pauseBadgeVisible);
@@ -171,7 +171,7 @@ async function runTests() {
     assert("Pause button changes to RESUME", pauseBtnText && pauseBtnText.includes("RESUME"), `"${pauseBtnText}"`);
   }
   {
-    await page.click("#pauseBtn");
+    await page.locator("#pauseBtn").click({ noWaitAfter: true });
     await page.waitForTimeout(150);
     const pauseBadgeHidden = await page.$eval("#pauseBadge", el => el.style.display);
     assert("PAUSED badge hidden after resume", pauseBadgeHidden === "none" || pauseBadgeHidden === "", `display="${pauseBadgeHidden}"`);

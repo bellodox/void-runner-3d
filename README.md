@@ -24,18 +24,24 @@
 - At launch, navigate the menu to select Easy, Normal, or Hard difficulty, then tap Start to begin the asteroid-dodging run.
 - During gameplay, collect shield and speed boost power-ups, survive waves of asteroids spawned via the delta-time loop, and monitor HUD elements such as timer, difficulty, and local best time.
 - When the run ends, the overlay displays final score details and allows submitting results to the chain leaderboard through the relay, which keeps localStorage-based bests separate from on-chain top-ten data.
-- Touch-friendly controls (keyboard, mouse, mobile touch) are supported, and the local relay reports statuses for chain and health endpoints to keep players informed of backend availability .
-- Upon Game Over, unregistered players are guided to Register before submitting, while registered players see a Submit action that only enables once a valid score exists; once a handle is registered it is locked in the UI with messaging that prevents further edits.
+- Touch-friendly controls (keyboard, mouse, mobile touch) are supported, and the local relay reports statuses for chain and health endpoints to keep players informed of backend availability.
+- Anti-cheat timer handling now auto-pauses gameplay when the tab loses focus or becomes hidden, and survival time no longer advances while paused/backgrounded.
+- First-run users now start with an empty handle field instead of inheriting a seeded default name.
+- During Game Over, unregistered players see an editable handle field plus Register guidance, while registered players see their locked handle and a Submit action.
+- Submit only becomes available when the player is registered and the latest run beats that player's existing chain best for the selected difficulty.
+- Duplicate handle attempts now return a clear “already taken” path so players can immediately choose another handle.
 
--## Technical Details
-- The browser client remains a single self-contained file (`index.html`) with inline markup, styling, and script so no build system is required; developers can open it directly or through any static host.
-- Blockchain leaderboard handling runs through `leaderboard-relay.js`, which now implements a player-owned leaderboard architecture rather than the old shared leaderboard table.
+## Technical Details
+- The browser client remains a single self-contained file ([`index.html`](index.html)) with inline markup, styling, and script so no build system is required; developers can open it directly or through any static host.
+- Blockchain leaderboard handling runs through [`leaderboard-relay.js`](leaderboard-relay.js), which implements the player-owned leaderboard architecture rather than the old shared leaderboard table.
 - The relay/API surface exposes health, registration, and per-player scoring endpoints: `GET /api/health`, `GET /api/player/status`, `POST /api/player/register`, `GET /api/leaderboard`, and `POST /api/leaderboard/submit`.
 - Players must register before submitting scores; registration associates a handle namespace (`p/<handle>`) that the relay enforces for subsequent submissions, and each submitted score updates only that player’s own `g/voidrunner3d/<handle>/record` entry.
-- Registration treats `handle` as the sole identifier, rejects duplicate handles with HTTP 409 to preserve uniqueness, and leaves registered handles immutable within the UI so leaderboard submissions remain tied to the same `p/<handle>` record.
+- Registration treats `handle` as the sole identifier, rejects duplicate handles with HTTP 409 to preserve uniqueness, and the UI only locks a handle after that exact handle is successfully registered.
+- The client no longer auto-assumes a default player handle on first run, and failed status/register checks reset the UI back to an editable state instead of leaving stale lock state behind.
 - Difficulty support remains `easy`, `normal`, and `hard`, and top-ten standings are derived by scanning/querying every `g/voidrunner3d/` record on-chain, aggregating the best scores per difficulty from registered players.
 - The relay depends on Node.js 18+, forwards requests to the SpaceXpanse ROD JSON-RPC node, and preserves localStorage bests independently while writing top-ten data on-chain.
 - Procedural audio uses Web Audio API, and Three.js r128 renders the 3D scene; local performance patterns follow a MENU → PLAYING → GAME_OVER → PAUSED state machine with object pooling for efficiency.
+- Timer accounting uses active-play accumulation instead of a single wall-clock origin, so paused time and background-tab time are excluded from score progression.
 
 ## Contribution Guidelines
 - Document all project changes in the `CHANGELOG.md`, describing new features, bugs, or next steps so future collaborators know the current state and documentation cadence.
