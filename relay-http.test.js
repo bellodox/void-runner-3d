@@ -126,18 +126,6 @@ async function startRelay(initialStore = {}, options = {}) {
           return buildJsonResponse({ result: 'txid-' + targetName.slice(2) });
         }
 
-        if (rpcRequest.method === 'getaddressbalance') {
-          const targetAddress = String(params[0] || '');
-          if (targetAddress !== 'RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29') {
-            return buildJsonResponse({ error: { code: -5, message: 'invalid address' } });
-          }
-          if (state.has('__potBalanceRaw')) {
-            return buildJsonResponse({ result: state.get('__potBalanceRaw') });
-          }
-          const configuredBalance = Number(state.get('__potBalance') || 0);
-          return buildJsonResponse({ result: { balance: configuredBalance } });
-        }
-
         return buildJsonResponse({ error: { code: -32601, message: 'Unknown RPC method' } });
       };
 
@@ -571,7 +559,7 @@ async function runTests() {
     assert("empty rank response keeps delta values null", emptyRankResponse.body?.deltas?.toLeader === null && emptyRankResponse.body?.deltas?.toNextRank === null && emptyRankResponse.body?.deltas?.toTopList === null, JSON.stringify(emptyRankResponse.body?.deltas));
   });
 
-  section("POST /api/prizes and GET /api/prizes/latest - MVP prize history");
+  section("GET /api/prizes/latest - MVP round history (read-only public relay)");
   await withRelay({}, async () => {
     const invalidTypeResponse = await request("GET", "/prizes/latest?type=monthly");
     assert("invalid prize type returns 400", invalidTypeResponse.status === 400, `got ${invalidTypeResponse.status}`);
@@ -580,25 +568,11 @@ async function runTests() {
     assert("missing latest prize returns 404", missingPrizeResponse.status === 404, `got ${missingPrizeResponse.status}`);
     assert("missing latest prize reports scan fallback strategy", missingPrizeResponse.body?.strategy === "scan-max-index", JSON.stringify(missingPrizeResponse.body));
 
-    const invalidPrizePayloadResponse = await request("POST", "/prizes", {
+    const createRoundResponse = await request("POST", "/prizes", {
       version: 1,
       type: "hourly",
       index: 0,
       winner: "pilot01",
-      score: 10,
-      difficulty: "easy",
-      blockStart: 1,
-      blockEnd: 2,
-      paid: true,
-      timestamp: 1000
-    });
-    assert("invalid paid prize payload without txid returns 400", invalidPrizePayloadResponse.status === 400, `got ${invalidPrizePayloadResponse.status}`);
-
-    const writeFirstPrizeResponse = await request("POST", "/prizes", {
-      version: 1,
-      type: "hourly",
-      index: 0,
-      winner: "Pilot01",
       score: 20.5,
       difficulty: "normal",
       blockStart: 100,
@@ -608,34 +582,7 @@ async function runTests() {
       paidAtHeight: null,
       timestamp: 1710000000000
     });
-    assert("valid prize write returns 200", writeFirstPrizeResponse.status === 200, `got ${writeFirstPrizeResponse.status}`);
-    assert("prize write returns write strategy", writeFirstPrizeResponse.body?.strategy === "write-record-and-pointer", JSON.stringify(writeFirstPrizeResponse.body));
-    assert("prize write normalizes winner handle", writeFirstPrizeResponse.body?.prize?.winner === "pilot01", JSON.stringify(writeFirstPrizeResponse.body?.prize));
-
-    const readLatestAfterFirstWriteResponse = await request("GET", "/prizes/latest?type=hourly");
-    assert("latest prize read after first write returns 200", readLatestAfterFirstWriteResponse.status === 200, `got ${readLatestAfterFirstWriteResponse.status}`);
-    assert("latest prize read uses pointer strategy", readLatestAfterFirstWriteResponse.body?.strategy === "pointer", JSON.stringify(readLatestAfterFirstWriteResponse.body));
-    assert("latest prize index is 0", readLatestAfterFirstWriteResponse.body?.prize?.index === 0, JSON.stringify(readLatestAfterFirstWriteResponse.body?.prize));
-
-    const writeSecondPrizeResponse = await request("POST", "/prizes", {
-      version: 1,
-      type: "hourly",
-      index: 1,
-      winner: "pilot02",
-      score: 30,
-      difficulty: "hard",
-      blockStart: 111,
-      blockEnd: 120,
-      paid: true,
-      txid: "tx-123",
-      paidAtHeight: 121,
-      timestamp: 1710000010000
-    });
-    assert("second prize write returns 200", writeSecondPrizeResponse.status === 200, `got ${writeSecondPrizeResponse.status}`);
-
-    const readLatestAfterSecondWriteResponse = await request("GET", "/prizes/latest?type=hourly");
-    assert("latest prize index follows latest pointer update", readLatestAfterSecondWriteResponse.body?.prize?.index === 1, JSON.stringify(readLatestAfterSecondWriteResponse.body?.prize));
-    assert("latest prize returns paid txid", readLatestAfterSecondWriteResponse.body?.prize?.txid === "tx-123", JSON.stringify(readLatestAfterSecondWriteResponse.body?.prize));
+    assert("public relay blocks admin round write route", createRoundResponse.status === 404, `got ${createRoundResponse.status}`);
   });
 
   section("GET /api/prize-window/status - block countdown MVP");
@@ -654,42 +601,10 @@ async function runTests() {
     assert("hourly status percentComplete is rounded to 3 decimals", hourlyStatusResponse.body?.percentComplete === 88.333, JSON.stringify(hourlyStatusResponse.body));
   });
 
-  section("GET /api/pot/status - MVP funding address balance visibility");
-  await withRelay({
-    __potBalance: 1.25
-  }, async () => {
-    const fundedResponse = await request("GET", "/pot/status");
-    assert("pot status returns 200", fundedResponse.status === 200, `got ${fundedResponse.status}`);
-    assert("pot status includes fixed funding address", fundedResponse.body?.address === "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29", JSON.stringify(fundedResponse.body));
-    assert("pot status returns configured balance", fundedResponse.body?.balance === 1.25, JSON.stringify(fundedResponse.body));
-    assert("pot status is FULLY_FUNDED when balance >= 1", fundedResponse.body?.status === "FULLY_FUNDED", JSON.stringify(fundedResponse.body));
-    assert("pot status reports zero missing amount when fully funded", fundedResponse.body?.missingToTarget === 0, JSON.stringify(fundedResponse.body));
-  });
-
-  await withRelay({
-    __potBalance: 0.4
-  }, async () => {
-    const lowResponse = await request("GET", "/pot/status");
-    assert("pot status is LOW when balance is between 0 and 1", lowResponse.body?.status === "LOW", JSON.stringify(lowResponse.body));
-    assert("pot status exposes missing amount to full funding threshold", lowResponse.body?.missingToTarget === 0.6, JSON.stringify(lowResponse.body));
-  });
-
-  await withRelay({
-    __potBalance: 0
-  }, async () => {
-    const unfundedResponse = await request("GET", "/pot/status");
-    assert("pot status is UNFUNDED when balance is 0", unfundedResponse.body?.status === "UNFUNDED", JSON.stringify(unfundedResponse.body));
-  });
-
-  await withRelay({
-    __potBalanceRaw: "NaN"
-  }, async () => {
-    const invalidBalanceResponse = await request("GET", "/pot/status");
-    assert("invalid RPC pot balance keeps endpoint online", invalidBalanceResponse.status === 200, `got ${invalidBalanceResponse.status}`);
-    assert("invalid RPC pot balance still exposes funding address", invalidBalanceResponse.body?.address === "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29", JSON.stringify(invalidBalanceResponse.body));
-    assert("invalid RPC pot balance marks status UNKNOWN", invalidBalanceResponse.body?.status === "UNKNOWN", JSON.stringify(invalidBalanceResponse.body));
-    assert("invalid RPC pot balance marks rpcAvailable false", invalidBalanceResponse.body?.rpcAvailable === false, JSON.stringify(invalidBalanceResponse.body));
-    assert("invalid RPC pot balance returns warning message", invalidBalanceResponse.body?.warning === "Invalid pot balance returned by RPC", JSON.stringify(invalidBalanceResponse.body));
+  section("GET /api/pot/status removed from public MVP relay");
+  await withRelay({}, async () => {
+    const removedEndpointResponse = await request("GET", "/pot/status");
+    assert("public pot status endpoint returns 404", removedEndpointResponse.status === 404, `got ${removedEndpointResponse.status}`);
   });
 
   section("GET /api/prizes/latest - scan fallback when latest pointer is stale");
@@ -730,7 +645,7 @@ async function runTests() {
     assert("scan fallback chooses highest prize index", fallbackReadResponse.body?.prize?.index === 4, JSON.stringify(fallbackReadResponse.body?.prize));
   });
 
-  section("POST /api/prizes/close-window - MVP manual payout");
+  section("POST /api/prizes/close-window removed from public relay");
   await withRelay({
     "p/alpha": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "alpha", recordName: "g/voidrunner3d/alpha/record" }),
     "g/voidrunner3d/alpha/record": createRecordValue("alpha", {
@@ -747,37 +662,10 @@ async function runTests() {
       blockStart: 100,
       blockEnd: 110
     });
-    assert("close-window without admin key returns 403", missingAdminKeyResponse.status === 403, `got ${missingAdminKeyResponse.status}`);
-
-    const invalidPayloadResponse = await request("POST", "/prizes/close-window", {
-      adminKey: "voidrunner3d-mvp-admin",
-      type: "monthly",
-      difficulty: "normal",
-      blockStart: 100,
-      blockEnd: 110
-    });
-    assert("close-window with invalid type returns 400", invalidPayloadResponse.status === 400, `got ${invalidPayloadResponse.status}`);
-
-    const closeWindowResponse = await request("POST", "/prizes/close-window", {
-      adminKey: "voidrunner3d-mvp-admin",
-      type: "hourly",
-      difficulty: "normal",
-      blockStart: 100,
-      blockEnd: 110,
-      payoutAmount: 0.015
-    });
-
-    assert("close-window success returns 200", closeWindowResponse.status === 200, `got ${closeWindowResponse.status}`);
-    assert("close-window marks payout as paid", closeWindowResponse.body?.payout?.paid === true, JSON.stringify(closeWindowResponse.body));
-    assert("close-window winner is top leaderboard handle", closeWindowResponse.body?.prize?.winner === "bravo", JSON.stringify(closeWindowResponse.body?.prize));
-    assert("close-window stores txid from sendtoname", closeWindowResponse.body?.prize?.txid === "txid-bravo", JSON.stringify(closeWindowResponse.body?.prize));
-
-    const latestPrizeResponse = await request("GET", "/prizes/latest?type=hourly");
-    assert("latest prize after close-window returns 200", latestPrizeResponse.status === 200, `got ${latestPrizeResponse.status}`);
-    assert("latest prize reflects successful payout", latestPrizeResponse.body?.prize?.paid === true && latestPrizeResponse.body?.prize?.txid === "txid-bravo", JSON.stringify(latestPrizeResponse.body?.prize));
+    assert("public close-window route returns 404", missingAdminKeyResponse.status === 404, `got ${missingAdminKeyResponse.status}`);
   });
 
-  section("POST /api/prizes/close-window - payout failure still writes failed prize record");
+  section("POST /api/prizes/close-window payout path removed from public relay");
   await withRelay({
     "p/payoutfail": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "payoutfail", recordName: "g/voidrunner3d/payoutfail/record" }),
     "g/voidrunner3d/payoutfail/record": createRecordValue("payoutfail", {
@@ -795,15 +683,7 @@ async function runTests() {
       blockStart: 300,
       blockEnd: 320
     });
-
-    assert("close-window with payout failure still returns 200", closeWindowResponse.status === 200, `got ${closeWindowResponse.status}`);
-    assert("failed payout prize has paid=false", closeWindowResponse.body?.prize?.paid === false, JSON.stringify(closeWindowResponse.body?.prize));
-    assert("failed payout prize stores txid=null", closeWindowResponse.body?.prize?.txid === null, JSON.stringify(closeWindowResponse.body?.prize));
-    assert("failed payout response includes payout error", typeof closeWindowResponse.body?.payout?.error === "string", JSON.stringify(closeWindowResponse.body?.payout));
-
-    const latestPrizeResponse = await request("GET", "/prizes/latest?type=daily");
-    assert("latest daily prize is written after payout failure", latestPrizeResponse.status === 200, `got ${latestPrizeResponse.status}`);
-    assert("latest daily prize keeps failed payout fields", latestPrizeResponse.body?.prize?.paid === false && latestPrizeResponse.body?.prize?.txid === null, JSON.stringify(latestPrizeResponse.body?.prize));
+    assert("public close-window remains unavailable", closeWindowResponse.status === 404, `got ${closeWindowResponse.status}`);
   });
 
   section("404 for unknown routes");

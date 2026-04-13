@@ -81,19 +81,6 @@ async function runTests() {
     });
   });
 
-  await page.route("http://127.0.0.1:8787/api/pot/status", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        address: "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29",
-        balance: 1.25,
-        status: "FULLY_FUNDED"
-      })
-    });
-  });
-
   await page.route("http://127.0.0.1:8787/api/prizes/latest?type=hourly", async (route) => {
     await route.fulfill({
       status: 200,
@@ -274,30 +261,30 @@ async function runTests() {
     assert("menu hourly countdown applies urgency styling under low-block threshold", isUrgent === 1, `count=${isUrgent}`);
   }
 
-  // ---- Main-menu pot panel (Sprint 5.2 MVP) ----
+  // ---- Main-menu round funding panel (MVP relay split) ----
   section("Main-menu pot panel");
   {
     await page.waitForTimeout(300);
     const potStatusText = await page.textContent("#menuPotStatusText");
     assert(
-      "menu pot status renders relay status value",
-      potStatusText && potStatusText.includes("FULLY_FUNDED"),
+      "menu round funding status renders explorer pending state",
+      potStatusText && potStatusText.includes("Explorer API pending"),
       `text="${potStatusText}"`
     );
   }
   {
     const potBalanceText = await page.textContent("#menuPotBalanceText");
     assert(
-      "menu pot balance renders formatted balance",
-      potBalanceText && potBalanceText.includes("1.25000000 SPACE"),
+      "menu round funding balance shows relay removal message",
+      potBalanceText && potBalanceText.includes("Unavailable") && potBalanceText.includes("RPC pot balance removed"),
       `text="${potBalanceText}"`
     );
   }
   {
     const potAddressValue = await page.$eval("#menuPotAddressInput", (element) => element.value);
     assert(
-      "menu pot address input shows funding address",
-      potAddressValue === "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29",
+      "menu round funding address input shows env-config message",
+      potAddressValue === "Configured in .env (PRIZE_POT_ADDRESS)",
       `value="${potAddressValue}"`
     );
   }
@@ -308,8 +295,8 @@ async function runTests() {
     await page.waitForTimeout(300);
     const recentWinnersStatusText = await page.textContent("#recentWinnersStatusText");
     assert(
-      "recent winners status explains composed MVP source",
-      recentWinnersStatusText && recentWinnersStatusText.includes("hourly/daily/weekly"),
+      "recent winners status explains composed round source",
+      recentWinnersStatusText && recentWinnersStatusText.includes("hourly/daily/weekly") && recentWinnersStatusText.includes("round windows"),
       `text="${recentWinnersStatusText}"`
     );
   }

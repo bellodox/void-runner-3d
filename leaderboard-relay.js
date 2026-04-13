@@ -52,11 +52,6 @@ const PRIZE_PREFIX = `${GAME_PREFIX}prizes/`;
 const RECORD_ENVELOPE_VERSION = 2;
 const RECORD_ENVELOPE_ALGORITHM = "sha256";
 const FEATURED_LEADERBOARD_DIFFICULTY = "normal";
-const DEFAULT_MVP_PAYOUT_AMOUNT = 0.01;
-const DEFAULT_MVP_ADMIN_KEY = "voidrunner3d-mvp-admin";
-const MVP_POT_FUNDING_ADDRESS = "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29";
-const MVP_POT_FULLY_FUNDED_THRESHOLD = 1;
-const MVP_POT_LOW_THRESHOLD = 0;
 const PRIZE_WINDOW_BLOCK_SIZES = Object.freeze({
   hourly: 120,
   daily: 2880,
@@ -337,34 +332,6 @@ function sanitizeTimestampMs(rawTimestamp) {
   const parsedTimestamp = Number(rawTimestamp);
   if (!Number.isInteger(parsedTimestamp) || parsedTimestamp < 0) return null;
   return parsedTimestamp;
-}
-
-function sanitizePayoutAmount(rawAmount) {
-  const parsedAmount = Number(rawAmount);
-  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return null;
-  return Math.round(parsedAmount * 100000000) / 100000000;
-}
-
-function sanitizePotBalance(rawBalance) {
-  const parsedBalance = Number(rawBalance);
-  if (!Number.isFinite(parsedBalance) || parsedBalance < 0) return null;
-  return Math.round(parsedBalance * 100000000) / 100000000;
-}
-
-function getMvpFundingStatus(balance) {
-  if (balance >= MVP_POT_FULLY_FUNDED_THRESHOLD) return "FULLY_FUNDED";
-  if (balance > MVP_POT_LOW_THRESHOLD) return "LOW";
-  return "UNFUNDED";
-}
-
-async function readMvpPotBalance() {
-  const rpcResult = await callRpc("getaddressbalance", [MVP_POT_FUNDING_ADDRESS]);
-  const rawBalance = rpcResult && typeof rpcResult === "object" ? rpcResult.balance : rpcResult;
-  const balance = sanitizePotBalance(rawBalance);
-  if (balance === null) {
-    throw new Error("Invalid pot balance returned by RPC");
-  }
-  return balance;
 }
 
 function sanitizeTxid(rawTxid) {
@@ -951,73 +918,6 @@ async function readLatestPrizeRecordByType(prizeType) {
   };
 }
 
-async function closePrizeWindowMvp({ prizeType, difficulty, blockStart, blockEnd, payoutAmount }) {
-  const leaderboardEntries = await getLeaderboardEntriesForDifficulty(difficulty);
-  if (!leaderboardEntries.length) {
-    return {
-      ok: false,
-      reason: "no-winner",
-      message: "No leaderboard entries available for selected difficulty"
-    };
-  }
-
-  const winnerEntry = leaderboardEntries[0];
-  const latestPrizeResult = await readLatestPrizeRecordByType(prizeType);
-  const nextPrizeIndex = latestPrizeResult.prize ? latestPrizeResult.prize.index + 1 : 0;
-
-  let paid = false;
-  let txid = null;
-  let paidAtHeight = null;
-  let payoutError = null;
-
-  try {
-    const payoutTargetName = getIdentityNameForHandle(winnerEntry.handle);
-    const payoutResult = await callRpc("sendtoname", [payoutTargetName, payoutAmount]);
-    const normalizedTxid = sanitizeTxid(payoutResult);
-    if (!normalizedTxid) {
-      throw new Error("Payout RPC did not return a valid txid");
-    }
-    txid = normalizedTxid;
-    paidAtHeight = await callRpc("getblockcount", []);
-    paid = true;
-  } catch (error) {
-    payoutError = error && error.message ? String(error.message) : "Payout failed";
-  }
-
-  const prizeRecord = {
-    version: 1,
-    type: prizeType,
-    index: nextPrizeIndex,
-    winner: winnerEntry.handle,
-    score: winnerEntry.score,
-    difficulty,
-    blockStart,
-    blockEnd,
-    paid,
-    txid,
-    paidAtHeight,
-    timestamp: Date.now()
-  };
-
-  const writeResult = await writePrizeRecord(prizeRecord);
-
-  return {
-    ok: true,
-    strategy: "manual-close-mvp",
-    payoutAmount,
-    winner: winnerEntry,
-    payout: {
-      paid,
-      txid,
-      paidAtHeight,
-      error: payoutError
-    },
-    recordName: writeResult.recordName,
-    latestPointerName: writeResult.latestPointerName,
-    prize: prizeRecord
-  };
-}
-
 function toApiPlayerStatus(status) {
   const scores = {};
   for (const difficulty of Object.keys(difficultyKeys)) {
@@ -1214,33 +1114,6 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === "POST" && requestUrl.pathname === "/api/prizes") {
-      const rawBody = await readRequestBody(request);
-      let parsedBody;
-      try {
-        parsedBody = JSON.parse(rawBody || "{}");
-      } catch {
-        sendJson(response, 400, { ok: false, error: "Invalid JSON body" });
-        return;
-      }
-
-      const normalizedPrizeRecord = normalizePrizeRecordInput(parsedBody);
-      if (!normalizedPrizeRecord) {
-        sendJson(response, 400, { ok: false, error: "Invalid prize record payload" });
-        return;
-      }
-
-      const writeResult = await writePrizeRecord(normalizedPrizeRecord);
-      sendJson(response, 200, {
-        ok: true,
-        strategy: "write-record-and-pointer",
-        recordName: writeResult.recordName,
-        latestPointerName: writeResult.latestPointerName,
-        prize: normalizedPrizeRecord
-      });
-      return;
-    }
-
     if (request.method === "GET" && requestUrl.pathname === "/api/prizes/latest") {
       const prizeType = sanitizePrizeType(String(requestUrl.searchParams.get("type") || "").toLowerCase());
       if (!prizeType) {
@@ -1262,6 +1135,7 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, {
         ok: true,
         type: prizeType,
+        roundType: prizeType,
         strategy: latestPrizeResult.strategy,
         prize: latestPrizeResult.prize
       });
@@ -1284,86 +1158,9 @@ const server = http.createServer(async (request, response) => {
 
       sendJson(response, 200, {
         ok: true,
+        roundType: prizeWindowStatus.type,
         ...prizeWindowStatus
       });
-      return;
-    }
-
-    if (request.method === "GET" && requestUrl.pathname === "/api/pot/status") {
-      try {
-        const balance = await readMvpPotBalance();
-        const missingToFullyFunded = Math.max(0, Math.round((MVP_POT_FULLY_FUNDED_THRESHOLD - balance) * 100000000) / 100000000);
-        sendJson(response, 200, {
-          ok: true,
-          address: MVP_POT_FUNDING_ADDRESS,
-          balance,
-          status: getMvpFundingStatus(balance),
-          rpcAvailable: true,
-          targetBalance: MVP_POT_FULLY_FUNDED_THRESHOLD,
-          missingToTarget: missingToFullyFunded
-        });
-      } catch (potError) {
-        sendJson(response, 200, {
-          ok: true,
-          address: MVP_POT_FUNDING_ADDRESS,
-          status: "UNKNOWN",
-          rpcAvailable: false,
-          targetBalance: MVP_POT_FULLY_FUNDED_THRESHOLD,
-          missingToTarget: null,
-          warning: potError && potError.message ? String(potError.message) : "Pot balance unavailable"
-        });
-      }
-      return;
-    }
-
-    if (request.method === "POST" && requestUrl.pathname === "/api/prizes/close-window") {
-      const rawBody = await readRequestBody(request);
-      let parsedBody;
-      try {
-        parsedBody = JSON.parse(rawBody || "{}");
-      } catch {
-        sendJson(response, 400, { ok: false, error: "Invalid JSON body" });
-        return;
-      }
-
-      const providedAdminKey = typeof parsedBody.adminKey === "string" ? parsedBody.adminKey : "";
-      const expectedAdminKey = process.env.MVP_ADMIN_KEY || DEFAULT_MVP_ADMIN_KEY;
-      if (!providedAdminKey || providedAdminKey !== expectedAdminKey) {
-        sendJson(response, 403, { ok: false, error: "Forbidden: invalid admin key" });
-        return;
-      }
-
-      const prizeType = sanitizePrizeType(String(parsedBody.type || "").toLowerCase());
-      const difficulty = sanitizeDifficulty(String(parsedBody.difficulty || "").toLowerCase());
-      const blockStart = sanitizeBlockHeight(parsedBody.blockStart);
-      const blockEnd = sanitizeBlockHeight(parsedBody.blockEnd);
-      const payoutAmount = sanitizePayoutAmount(
-        parsedBody.payoutAmount === undefined ? DEFAULT_MVP_PAYOUT_AMOUNT : parsedBody.payoutAmount
-      );
-
-      if (!prizeType || !difficulty || blockStart === null || blockEnd === null || blockEnd < blockStart || payoutAmount === null) {
-        sendJson(response, 400, { ok: false, error: "Invalid close-window payload" });
-        return;
-      }
-
-      const closeResult = await closePrizeWindowMvp({
-        prizeType,
-        difficulty,
-        blockStart,
-        blockEnd,
-        payoutAmount
-      });
-
-      if (!closeResult.ok) {
-        sendJson(response, 409, {
-          ok: false,
-          error: closeResult.message,
-          reason: closeResult.reason
-        });
-        return;
-      }
-
-      sendJson(response, 200, closeResult);
       return;
     }
 

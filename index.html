@@ -593,16 +593,16 @@
       <button id="startBtn" class="action-btn">Start Game</button>
 
       <div id="menuHourlyCountdown" class="countdown-chip" aria-live="polite">
-        <p class="countdown-label">Hourly Prize Window</p>
+        <p class="countdown-label">Hourly Round Window</p>
         <p id="menuHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
       </div>
 
-      <div class="pot-board" aria-live="polite">
-        <h2>MVP Prize Pot</h2>
-        <p id="menuPotStatusText" class="pot-row">Status: loading...</p>
-        <p id="menuPotBalanceText" class="pot-row">Balance: --</p>
+      <div class="pot-board hidden" aria-live="polite">
+        <h2>MVP Round Funding</h2>
+        <p id="menuPotStatusText" class="pot-row">Status: Explorer API pending</p>
+        <p id="menuPotBalanceText" class="pot-row">Balance: unavailable in current MVP relay</p>
         <div class="pot-address-wrap">
-          <input id="menuPotAddressInput" class="pot-address-input" type="text" value="Loading address..." readonly aria-label="MVP pot funding address" />
+          <input id="menuPotAddressInput" class="pot-address-input" type="text" value="Address configured in relay env" readonly aria-label="MVP round funding address" />
           <button id="copyPotAddressBtn" class="small-btn pot-copy-btn" type="button">Copy</button>
         </div>
       </div>
@@ -628,11 +628,11 @@
       <p id="scoreBreakdownText" class="subtitle">Survival 00:00.000 · Bonus 00:00.000 · Total 00:00.000</p>
       <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
       <div class="prize-board" aria-live="polite">
-        <h2>Latest Hourly Winner</h2>
-        <p id="latestHourlyPrizeText">Loading latest hourly winner...</p>
+        <h2>Latest Hourly Round Winner</h2>
+        <p id="latestHourlyPrizeText">Loading latest hourly round winner...</p>
       </div>
       <div id="gameOverHourlyCountdown" class="countdown-chip" aria-live="polite">
-        <p class="countdown-label">Hourly Prize Window</p>
+        <p class="countdown-label">Hourly Round Window</p>
         <p id="gameOverHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
       </div>
       <div class="featured-rank-board" aria-live="polite">
@@ -1390,9 +1390,9 @@
           renderRecentWinners(latestThreeWinners);
 
           if (latestThreeWinners.length) {
-            setRecentWinnersStatus("Latest winners from hourly/daily/weekly prize windows.", "#a6c6dd");
+            setRecentWinnersStatus("Latest winners from hourly/daily/weekly round windows.", "#a6c6dd");
           } else {
-            setRecentWinnersStatus("No prize winner records yet.", "#a6c6dd");
+            setRecentWinnersStatus("No round winner records yet.", "#a6c6dd");
           }
         } catch {
           renderRecentWinners([]);
@@ -1427,47 +1427,14 @@
         menuPotAddressInput.value = fundingAddress || "--";
       }
 
-      function formatPotBalance(balanceValue) {
-        if (!Number.isFinite(balanceValue)) return "--";
-        return `${balanceValue.toFixed(8)} SPACE`;
-      }
-
-      function formatPotDistanceToTarget(missingAmountValue) {
-        if (!Number.isFinite(missingAmountValue)) return "";
-        if (missingAmountValue <= 0) return "Target reached";
-        return `${missingAmountValue.toFixed(8)} SPACE to target`;
-      }
-
-      function getPotStatusColor(statusValue) {
-        if (statusValue === "FULLY_FUNDED") return "#65f5a8";
-        if (statusValue === "LOW") return "#ffc857";
-        if (statusValue === "UNFUNDED") return "#ffb0b0";
-        return "#a6c6dd";
-      }
-
       async function loadMenuPotStatus() {
-        setMenuPotStatus("loading...", "#a6c6dd", "--", "Loading address...", "");
-
-        try {
-          const response = await fetch(`${RELAY_BASE_URL}/pot/status`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-          const payload = await response.json();
-          const statusValue = typeof payload?.status === "string" ? payload.status : "UNKNOWN";
-          const addressValue = typeof payload?.address === "string" ? payload.address : "--";
-          const balanceValue = Number(payload?.balance);
-          const missingToTargetValue = Number(payload?.missingToTarget);
-
-          setMenuPotStatus(
-            statusValue,
-            getPotStatusColor(statusValue),
-            formatPotBalance(balanceValue),
-            addressValue,
-            formatPotDistanceToTarget(missingToTargetValue)
-          );
-        } catch {
-          setMenuPotStatus("unavailable (relay offline)", "#ffb0b0", "--", "Unavailable", "");
-        }
+        setMenuPotStatus(
+          "Explorer API pending",
+          "#ffd18a",
+          "Unavailable",
+          "Configured in .env (PRIZE_POT_ADDRESS)",
+          "RPC pot balance removed from public MVP relay"
+        );
       }
 
       async function loadHourlyPrizeWindowStatus() {
@@ -1494,13 +1461,13 @@
       }
 
       async function loadLatestHourlyWinner() {
-        setLatestHourlyPrizeText("Loading latest hourly winner...", "#9cc8e2");
+        setLatestHourlyPrizeText("Loading latest hourly round winner...", "#9cc8e2");
 
         try {
           const response = await fetch(`${RELAY_BASE_URL}/prizes/latest?type=hourly`);
 
           if (response.status === 404) {
-            setLatestHourlyPrizeText("No hourly winner yet.", "#a6c6dd");
+            setLatestHourlyPrizeText("No hourly round winner yet.", "#a6c6dd");
             return;
           }
 
@@ -1512,9 +1479,9 @@
           const winnerScore = getPrizeWinnerScore(latestPrize);
           const winnerDifficulty = getPrizeWinnerDifficulty(latestPrize);
           const payoutStatus = getPrizePayoutStatus(latestPrize);
-          setLatestHourlyPrizeText(`Winner: ${winnerHandle} | Score: ${winnerScore} | Difficulty: ${winnerDifficulty} | Payout: ${payoutStatus.label}`, payoutStatus.color);
+          setLatestHourlyPrizeText(`Round winner: ${winnerHandle} | Score: ${winnerScore} | Difficulty: ${winnerDifficulty} | Payout: ${payoutStatus.label}`, payoutStatus.color);
         } catch {
-          setLatestHourlyPrizeText("Latest hourly winner unavailable (relay offline).", "#ffb0b0");
+          setLatestHourlyPrizeText("Latest hourly round winner unavailable (relay offline).", "#ffb0b0");
         }
       }
 

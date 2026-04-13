@@ -5,10 +5,12 @@
   "description": "Local relay for Void Runner 3D blockchain leaderboard",
   "scripts": {
     "relay": "node leaderboard-relay.js",
+    "relay:admin": "node admin-relay.js",
     "test:relay": "node relay.test.js",
     "test:relay:http": "node relay-http.test.js",
+    "test:relay:admin": "node admin-relay.test.js",
     "test:game": "node game.test.js",
-    "validate:mvp": "npm run test:relay && npm run test:relay:http && npm run test:game"
+    "validate:mvp": "npm run test:relay && npm run test:relay:http && npm run test:relay:admin && npm run test:game"
   },
   "engines": {
     "node": ">=18"
