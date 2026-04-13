@@ -66,6 +66,127 @@ async function runTests() {
   });
   const page = await context.newPage();
 
+  await page.route("http://127.0.0.1:8787/api/prize-window/status?type=hourly", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        type: "hourly",
+        currentBlockHeight: 12345,
+        currentWindowIndex: 102,
+        windowSize: 120,
+        blocksRemaining: 7,
+        percentComplete: 94.2
+      })
+    });
+  });
+
+  await page.route("http://127.0.0.1:8787/api/pot/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        address: "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29",
+        balance: 1.25,
+        status: "FULLY_FUNDED"
+      })
+    });
+  });
+
+  await page.route("http://127.0.0.1:8787/api/prizes/latest?type=hourly", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        type: "hourly",
+        strategy: "pointer",
+        prize: {
+          type: "hourly",
+          winner: "pilot-hour",
+          score: 44.321,
+          paid: true,
+          txid: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          timestamp: 1710000300000
+        }
+      })
+    });
+  });
+
+  await page.route("http://127.0.0.1:8787/api/prizes/latest?type=daily", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        type: "daily",
+        strategy: "pointer",
+        prize: {
+          type: "daily",
+          winner: "pilot-day",
+          score: 55.432,
+          paid: false,
+          txid: null,
+          timestamp: 1710000600000
+        }
+      })
+    });
+  });
+
+  await page.route("http://127.0.0.1:8787/api/prizes/latest?type=weekly", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        type: "weekly",
+        strategy: "pointer",
+        prize: {
+          type: "weekly",
+          winner: "pilot-week",
+          score: 66.543,
+          paid: true,
+          txid: "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+          timestamp: 1710000900000
+        }
+      })
+    });
+  });
+
+  await page.route("http://127.0.0.1:8787/api/leaderboard/rank?handle=acepilot", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        featuredDifficulty: "normal",
+        player: {
+          handle: "acepilot",
+          rank: 3,
+          score: 33,
+          inTopList: true
+        },
+        top: [
+          { rank: 1, handle: "champ", score: 40 },
+          { rank: 2, handle: "rival", score: 36 },
+          { rank: 3, handle: "acepilot", score: 33 },
+          { rank: 4, handle: "nova", score: 31 },
+          { rank: 5, handle: "zen", score: 29 }
+        ],
+        targets: {
+          leader: { rank: 1, handle: "champ", score: 40 },
+          next: { rank: 2, handle: "rival", score: 36 }
+        },
+        deltas: {
+          toLeader: 7,
+          toNextRank: 3,
+          toTopList: null
+        }
+      })
+    });
+  });
+
   // Capture console errors
   const consoleErrors = [];
   page.on("console", (msg) => {
@@ -137,6 +258,79 @@ async function runTests() {
     assert("chain status shows relay state", isOfflineOrLoading, `"${statusText}"`);
   }
 
+  // ---- Hourly countdown display ----
+  section("Hourly countdown display");
+  {
+    await page.waitForTimeout(300);
+    const countdownText = await page.textContent("#menuHourlyCountdownText");
+    assert(
+      "menu shows hourly countdown with blocks and approximate time",
+      countdownText && countdownText.includes("Ends in 7 blocks") && countdownText.includes("~4m") && countdownText.includes("94% complete"),
+      `text="${countdownText}"`
+    );
+  }
+  {
+    const isUrgent = await page.locator("#menuHourlyCountdown.urgent").count();
+    assert("menu hourly countdown applies urgency styling under low-block threshold", isUrgent === 1, `count=${isUrgent}`);
+  }
+
+  // ---- Main-menu pot panel (Sprint 5.2 MVP) ----
+  section("Main-menu pot panel");
+  {
+    await page.waitForTimeout(300);
+    const potStatusText = await page.textContent("#menuPotStatusText");
+    assert(
+      "menu pot status renders relay status value",
+      potStatusText && potStatusText.includes("FULLY_FUNDED"),
+      `text="${potStatusText}"`
+    );
+  }
+  {
+    const potBalanceText = await page.textContent("#menuPotBalanceText");
+    assert(
+      "menu pot balance renders formatted balance",
+      potBalanceText && potBalanceText.includes("1.25000000 SPACE"),
+      `text="${potBalanceText}"`
+    );
+  }
+  {
+    const potAddressValue = await page.$eval("#menuPotAddressInput", (element) => element.value);
+    assert(
+      "menu pot address input shows funding address",
+      potAddressValue === "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29",
+      `value="${potAddressValue}"`
+    );
+  }
+
+  // ---- Main-menu recent winners (Sprint 7.3 MVP) ----
+  section("Main-menu recent winners");
+  {
+    await page.waitForTimeout(300);
+    const recentWinnersStatusText = await page.textContent("#recentWinnersStatusText");
+    assert(
+      "recent winners status explains composed MVP source",
+      recentWinnersStatusText && recentWinnersStatusText.includes("hourly/daily/weekly"),
+      `text="${recentWinnersStatusText}"`
+    );
+  }
+  {
+    const recentWinnersRows = await page.locator("#recentWinnersList li").allTextContents();
+    assert("recent winners renders up to three rows", recentWinnersRows.length === 3, `count=${recentWinnersRows.length}`);
+    assert(
+      "recent winners rows are sorted newest-first by timestamp",
+      recentWinnersRows[0]?.includes("WEEKLY") && recentWinnersRows[1]?.includes("DAILY") && recentWinnersRows[2]?.includes("HOURLY"),
+      JSON.stringify(recentWinnersRows)
+    );
+  }
+  {
+    const recentWinnersRows = await page.locator("#recentWinnersList li").allTextContents();
+    assert(
+      "recent winners include payout status and txid visibility when present",
+      recentWinnersRows[0]?.includes("PAID") && recentWinnersRows[0]?.includes("tx:") && recentWinnersRows[1]?.includes("PENDING"),
+      JSON.stringify(recentWinnersRows)
+    );
+  }
+
   // ---- Game start ----
   section("Game start");
   {
@@ -158,6 +352,14 @@ async function runTests() {
   {
     const highScoreText = await page.textContent("#highScoreBox");
     assert("high score box shows LOCAL BEST", highScoreText && highScoreText.includes("LOCAL BEST"), `"${highScoreText}"`);
+  }
+  {
+    const salvageHiddenCount = await page.evaluate(() => {
+      const salvageElement = document.getElementById("salvageBox");
+      if (!salvageElement) return -1;
+      return salvageElement.style.display === "none" ? 1 : 0;
+    });
+    assert("salvage HUD indicator is hidden while inactive", salvageHiddenCount === 1, `count=${salvageHiddenCount}`);
   }
 
   // ---- Pause / Resume ----
@@ -246,6 +448,124 @@ async function runTests() {
     await page.waitForTimeout(150);
   }
 
+  // ---- Salvage multiplier and score model (Sprint 6.1) ----
+  section("Salvage multiplier and score model");
+  {
+    await page.click("#pauseBtn");
+    await page.waitForTimeout(150);
+
+    const initialSalvageState = await page.evaluate(() => {
+      return window.__voidRunnerDebug.getState();
+    });
+    assert(
+      "salvage state starts inactive",
+      initialSalvageState.salvageMultiplier === 0 && initialSalvageState.salvageRemaining === 0,
+      JSON.stringify(initialSalvageState)
+    );
+  }
+  {
+    const firstActivationState = await page.evaluate(() => {
+      window.__voidRunnerDebug.activateSalvageForTest();
+      return window.__voidRunnerDebug.getState();
+    });
+    assert(
+      "first shield-hit salvage activation starts at x1.5 for 5s",
+      firstActivationState.salvageMultiplier === 1.5 && Math.abs(firstActivationState.salvageRemaining - 5) < 0.0001,
+      JSON.stringify(firstActivationState)
+    );
+
+    const salvageHudText = await page.textContent("#salvageBox");
+    assert(
+      "salvage HUD indicator becomes visible with x1.5 state",
+      salvageHudText && salvageHudText.includes("SALVAGE x1.5") && salvageHudText.includes("5.0s"),
+      `text="${salvageHudText}"`
+    );
+  }
+  {
+    const refreshedState = await page.evaluate(() => {
+      window.__voidRunnerDebug.updateSalvageForTest(1.2);
+      window.__voidRunnerDebug.activateSalvageForTest();
+      return window.__voidRunnerDebug.getState();
+    });
+    assert(
+      "repeat shield-hit refreshes salvage duration and increases multiplier",
+      refreshedState.salvageMultiplier === 2 && Math.abs(refreshedState.salvageRemaining - 5) < 0.0001,
+      JSON.stringify(refreshedState)
+    );
+
+    const refreshedHudText = await page.textContent("#salvageBox");
+    assert(
+      "salvage HUD indicator updates when multiplier changes",
+      refreshedHudText && (refreshedHudText.includes("SALVAGE x2.0") || refreshedHudText.includes("SALVAGE x1.5")) && refreshedHudText.includes("5.0s"),
+      `text="${refreshedHudText}"`
+    );
+  }
+  {
+    const cappedState = await page.evaluate(() => {
+      window.__voidRunnerDebug.activateSalvageForTest(); // 2.5
+      window.__voidRunnerDebug.activateSalvageForTest(); // 3.0
+      window.__voidRunnerDebug.activateSalvageForTest(); // still 3.0 cap
+      return window.__voidRunnerDebug.getState();
+    });
+    assert(
+      "salvage multiplier caps at x3.0",
+      cappedState.salvageMultiplier === 3,
+      JSON.stringify(cappedState)
+    );
+  }
+  {
+    const scoringState = await page.evaluate(() => {
+      const stateBefore = window.__voidRunnerDebug.getState();
+      window.__voidRunnerDebug.setSurvivalTimeForTest(20);
+      window.__voidRunnerDebug.activateSalvageForTest(); // 3.0 was active, refreshes to 3.0
+      window.__voidRunnerDebug.updateSalvageForTest(2);
+      const stateAfter = window.__voidRunnerDebug.getState();
+      return {
+        stateBefore,
+        stateAfter,
+        bonusDelta: stateAfter.bonusTime - stateBefore.bonusTime
+      };
+    });
+
+    const expectedBonusTime = 4; // 2 seconds at (x3.0 - 1.0)
+    const expectedScore = 20 + scoringState.stateAfter.bonusTime;
+    assert(
+      "bonus time accumulates while salvage window is active",
+      Math.abs(scoringState.bonusDelta - expectedBonusTime) < 0.0001,
+      JSON.stringify(scoringState)
+    );
+    assert(
+      "score follows survival_time + bonus_time",
+      Math.abs(scoringState.stateAfter.score - expectedScore) < 0.0001,
+      JSON.stringify(scoringState)
+    );
+  }
+  {
+    const expiredState = await page.evaluate(() => {
+      window.__voidRunnerDebug.updateSalvageForTest(6);
+      return window.__voidRunnerDebug.getState();
+    });
+    assert(
+      "salvage multiplier expires after duration",
+      expiredState.salvageMultiplier === 0 && expiredState.salvageRemaining === 0,
+      JSON.stringify(expiredState)
+    );
+
+    const salvageHiddenAfterExpireCount = await page.evaluate(() => {
+      const salvageElement = document.getElementById("salvageBox");
+      if (!salvageElement) return -1;
+      return salvageElement.style.display === "none" ? 1 : 0;
+    });
+    assert(
+      "salvage HUD indicator hides after salvage window expires",
+      salvageHiddenAfterExpireCount === 1,
+      `count=${salvageHiddenAfterExpireCount}`
+    );
+
+    await page.click("#pauseBtn");
+    await page.waitForTimeout(150);
+  }
+
   // ---- Game loop runs without JS errors during play ----
   section("No JS errors during gameplay");
   {
@@ -310,16 +630,56 @@ async function runTests() {
     await page.evaluate(() => {
       const gameOverElement = document.getElementById("gameOverOverlay");
       if (gameOverElement) gameOverElement.classList.remove("hidden");
-      localStorage.removeItem("voidrunner_player_handle");
+      localStorage.setItem("voidrunner_player_handle", "acepilot");
       const inputElement = document.getElementById("playerInitialsInput");
       if (inputElement) {
         inputElement.disabled = false;
-        inputElement.value = "";
+        inputElement.value = "acepilot";
+        inputElement.dispatchEvent(new Event("input", { bubbles: true }));
       }
     });
 
+    await page.waitForTimeout(600);
+
     const initialHandleValue = await page.$eval("#playerInitialsInput", (element) => element.value);
-    assert("new-user handle starts empty instead of a seeded default", initialHandleValue === "", `value="${initialHandleValue}"`);
+    assert("stored handle is available on game-over handle input", initialHandleValue === "acepilot", `value="${initialHandleValue}"`);
+
+    const latestHourlyWinnerText = await page.textContent("#latestHourlyPrizeText");
+    assert(
+      "game-over panel includes latest hourly winner section",
+      latestHourlyWinnerText && latestHourlyWinnerText.trim().length > 0,
+      `text="${latestHourlyWinnerText}"`
+    );
+
+    const gameOverCountdownText = await page.textContent("#gameOverHourlyCountdownText");
+    assert(
+      "game-over panel includes hourly countdown",
+      gameOverCountdownText && gameOverCountdownText.includes("Ends in 7 blocks") && gameOverCountdownText.includes("~4m"),
+      `text="${gameOverCountdownText}"`
+    );
+
+    const gameOverUrgencyClassCount = await page.locator("#gameOverHourlyCountdown.urgent").count();
+    assert("game-over hourly countdown applies urgency styling under low-block threshold", gameOverUrgencyClassCount === 1, `count=${gameOverUrgencyClassCount}`);
+
+    const featuredRowsCount = await page.locator("#featuredRankList li").count();
+    assert("featured chart renders compact top-5 rows", featuredRowsCount === 5, `count=${featuredRowsCount}`);
+
+    const featuredLeaderText = await page.locator("#featuredRankList li").first().textContent();
+    assert("featured chart highlights #1 leader row label", featuredLeaderText && featuredLeaderText.includes("LEADER"), `text="${featuredLeaderText}"`);
+
+    const featuredContextText = await page.textContent("#featuredRankContextText");
+    assert(
+      "featured chart shows player placement context",
+      featuredContextText && featuredContextText.includes("Your featured rank: #3") && featuredContextText.includes("00:33.000"),
+      `text="${featuredContextText}"`
+    );
+
+    const featuredDeltaText = await page.textContent("#featuredRankDeltaText");
+    assert(
+      "featured chart shows actionable delta line to #1",
+      featuredDeltaText && featuredDeltaText.includes("Distance to #1") && featuredDeltaText.includes("00:07.000"),
+      `text="${featuredDeltaText}"`
+    );
 
     const sanitizedValue = await page.evaluate(() => {
       const inputElement = document.getElementById("playerInitialsInput");
@@ -329,6 +689,32 @@ async function runTests() {
       return inputElement.value;
     });
     assert("handle input sanitizes editable values", sanitizedValue === "abc123", `value="${sanitizedValue}"`);
+  }
+
+  // ---- Game-over score breakdown (Sprint 6.2 MVP) ----
+  section("Game-over score breakdown");
+  {
+    const scoreBreakdownState = await page.evaluate(() => {
+      window.__voidRunnerDebug.setSurvivalTimeForTest(12.345);
+      window.__voidRunnerDebug.setBonusTimeForTest(3.21);
+      window.__voidRunnerDebug.renderScoreBreakdownForTest();
+      const finalText = document.getElementById("finalScoreText")?.textContent || "";
+      const breakdownText = document.getElementById("scoreBreakdownText")?.textContent || "";
+      return { finalText, breakdownText };
+    });
+
+    assert(
+      "game-over final score label shows total score",
+      scoreBreakdownState.finalText.includes("Final Score: 00:15.555") || scoreBreakdownState.finalText.includes("Final Score: 00:15.554"),
+      `text="${scoreBreakdownState.finalText}"`
+    );
+    assert(
+      "game-over score breakdown shows survival, bonus, and total",
+      scoreBreakdownState.breakdownText.includes("Survival 00:12.345") &&
+      scoreBreakdownState.breakdownText.includes("Bonus 00:03.209") &&
+      (scoreBreakdownState.breakdownText.includes("Total 00:15.555") || scoreBreakdownState.breakdownText.includes("Total 00:15.554")),
+      `text="${scoreBreakdownState.breakdownText}"`
+    );
   }
 
   // ---- formatTime edge cases via HUD ----

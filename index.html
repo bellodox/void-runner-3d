@@ -129,12 +129,232 @@
       text-align: left;
     }
 
+    .prize-board {
+      margin: 12px 0 10px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      padding: 12px;
+      text-align: left;
+    }
+
+    .prize-board h2 {
+      margin: 0 0 8px;
+      font-size: 0.9rem;
+      color: #c9ecff;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .prize-board p {
+      margin: 0;
+      color: #dcefff;
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+
+    .countdown-chip {
+      margin: 12px 0 10px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      padding: 10px 12px;
+      text-align: left;
+      display: grid;
+      gap: 4px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .countdown-chip .countdown-label {
+      margin: 0;
+      font-size: 0.76rem;
+      color: #9cc8e2;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .countdown-chip .countdown-value {
+      margin: 0;
+      font-size: 0.82rem;
+      color: #dcefff;
+      line-height: 1.35;
+    }
+
+    .countdown-chip.urgent {
+      border-color: rgba(255, 200, 87, 0.75);
+      box-shadow: 0 0 10px rgba(255, 200, 87, 0.18);
+    }
+
+    .countdown-chip.urgent .countdown-value {
+      color: #ffe7b0;
+    }
+
+    .pot-board {
+      margin: 12px 0 10px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      padding: 12px;
+      text-align: left;
+      display: grid;
+      gap: 6px;
+    }
+
+    .pot-board h2 {
+      margin: 0 0 4px;
+      font-size: 0.9rem;
+      color: #c9ecff;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .pot-row {
+      margin: 0;
+      font-size: 0.8rem;
+      color: #dcefff;
+      line-height: 1.45;
+      word-break: break-all;
+    }
+
+    .pot-address-wrap {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .pot-address-input {
+      width: 100%;
+      background: rgba(8, 16, 30, 0.9);
+      border: 1px solid rgba(121, 215, 255, 0.45);
+      color: #e8f7ff;
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-family: inherit;
+      font-size: 0.74rem;
+      letter-spacing: 0.02em;
+    }
+
+    .pot-copy-btn {
+      min-width: 74px;
+      font-size: 0.7rem;
+      padding: 7px 10px;
+    }
+
+    .recent-winners-board {
+      margin: 12px 0 10px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      padding: 12px;
+      text-align: left;
+    }
+
+    .recent-winners-board h2 {
+      margin: 0 0 8px;
+      font-size: 0.9rem;
+      color: #c9ecff;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .recent-winners-status {
+      margin: 0 0 8px;
+      color: #9cc8e2;
+      font-size: 0.76rem;
+      letter-spacing: 0.03em;
+      line-height: 1.4;
+    }
+
+    .recent-winners-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 5px;
+      min-height: 64px;
+      font-size: 0.76rem;
+      color: #dcefff;
+    }
+
+    .recent-winners-list li {
+      display: grid;
+      grid-template-columns: 56px 1fr auto;
+      gap: 8px;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(121, 215, 255, 0.15);
+      align-items: center;
+    }
+
+    .recent-winners-list li:last-child {
+      border-bottom: none;
+    }
+
     .chain-board h2 {
       margin: 0 0 8px;
       font-size: 0.9rem;
       color: #c9ecff;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }
+
+    .featured-rank-board {
+      margin: 12px 0 10px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      padding: 12px;
+      text-align: left;
+    }
+
+    .featured-rank-board h2 {
+      margin: 0 0 8px;
+      font-size: 0.9rem;
+      color: #c9ecff;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .featured-rank-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 4px;
+      min-height: 86px;
+      font-size: 0.78rem;
+      color: #dcefff;
+    }
+
+    .featured-rank-list li {
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      gap: 8px;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(121, 215, 255, 0.15);
+    }
+
+    .featured-rank-list li:last-child {
+      border-bottom: none;
+    }
+
+    .featured-rank-list li.featured-leader {
+      color: #ffe7b0;
+      font-weight: 700;
+    }
+
+    .featured-rank-context {
+      margin: 8px 0 0;
+      color: #a6c6dd;
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .featured-rank-delta {
+      margin: 4px 0 0;
+      color: #dcefff;
+      font-size: 0.78rem;
+      line-height: 1.45;
     }
 
     .status-line {
@@ -232,6 +452,37 @@
     #timerBox { top: 12px; left: 50%; transform: translateX(-50%); }
     #highScoreBox { top: 12px; right: 12px; }
 
+    #salvageBox {
+      top: 58px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      min-width: 170px;
+      text-align: center;
+      border-color: rgba(255, 200, 87, 0.55);
+      box-shadow: 0 0 20px rgba(255, 200, 87, 0.2);
+      color: #ffe9bb;
+    }
+
+    #salvageBox.salvage-refresh {
+      animation: salvagePulse 0.24s ease-out;
+    }
+
+    @keyframes salvagePulse {
+      0% {
+        transform: translateX(-50%) scale(1);
+        box-shadow: 0 0 10px rgba(255, 200, 87, 0.25);
+      }
+      55% {
+        transform: translateX(-50%) scale(1.03);
+        box-shadow: 0 0 24px rgba(255, 200, 87, 0.42);
+      }
+      100% {
+        transform: translateX(-50%) scale(1);
+        box-shadow: 0 0 20px rgba(255, 200, 87, 0.2);
+      }
+    }
+
     #powerupBox {
       left: 50%;
       bottom: 14px;
@@ -322,6 +573,7 @@
     <div id="difficultyLabel" class="hud-box">DIFF: NORMAL</div>
     <div id="timerBox" class="hud-box">TIME 00:00.000</div>
     <div id="highScoreBox" class="hud-box">BEST 00:00.000</div>
+    <div id="salvageBox" class="hud-box">SALVAGE x1.5 · 5.0s</div>
 
     <div id="powerupBox" class="hud-box">
       <div id="powerupName">SHIELD</div>
@@ -340,6 +592,27 @@
       </div>
       <button id="startBtn" class="action-btn">Start Game</button>
 
+      <div id="menuHourlyCountdown" class="countdown-chip" aria-live="polite">
+        <p class="countdown-label">Hourly Prize Window</p>
+        <p id="menuHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
+      </div>
+
+      <div class="pot-board" aria-live="polite">
+        <h2>MVP Prize Pot</h2>
+        <p id="menuPotStatusText" class="pot-row">Status: loading...</p>
+        <p id="menuPotBalanceText" class="pot-row">Balance: --</p>
+        <div class="pot-address-wrap">
+          <input id="menuPotAddressInput" class="pot-address-input" type="text" value="Loading address..." readonly aria-label="MVP pot funding address" />
+          <button id="copyPotAddressBtn" class="small-btn pot-copy-btn" type="button">Copy</button>
+        </div>
+      </div>
+
+      <div class="recent-winners-board" aria-live="polite">
+        <h2>Recent Winners</h2>
+        <p id="recentWinnersStatusText" class="recent-winners-status">Loading recent winners...</p>
+        <ol id="recentWinnersList" class="recent-winners-list"></ol>
+      </div>
+
       <div class="chain-board">
         <h2 id="chainTitle">Chain Leaderboard (Normal)</h2>
         <p id="chainStatusText" class="status-line">Relay status: checking...</p>
@@ -351,8 +624,23 @@
   <div id="gameOverOverlay" class="overlay hidden">
     <div class="panel">
       <h1 class="game-over-title">Game Over</h1>
-      <p id="finalScoreText" class="subtitle">Final Time: 00:00.000</p>
+      <p id="finalScoreText" class="subtitle">Final Score: 00:00.000</p>
+      <p id="scoreBreakdownText" class="subtitle">Survival 00:00.000 · Bonus 00:00.000 · Total 00:00.000</p>
       <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
+      <div class="prize-board" aria-live="polite">
+        <h2>Latest Hourly Winner</h2>
+        <p id="latestHourlyPrizeText">Loading latest hourly winner...</p>
+      </div>
+      <div id="gameOverHourlyCountdown" class="countdown-chip" aria-live="polite">
+        <p class="countdown-label">Hourly Prize Window</p>
+        <p id="gameOverHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
+      </div>
+      <div class="featured-rank-board" aria-live="polite">
+        <h2>Featured Chart (Normal) Top 5</h2>
+        <ol id="featuredRankList" class="featured-rank-list"></ol>
+        <p id="featuredRankContextText" class="featured-rank-context">Loading featured rank...</p>
+        <p id="featuredRankDeltaText" class="featured-rank-delta">&nbsp;</p>
+      </div>
       <div class="chain-submit">
         <input id="playerInitialsInput" class="initials-input" type="text" maxlength="24" value="" placeholder="choose handle" autocomplete="off" spellcheck="false" />
         <button id="registerChainPlayerBtn" class="action-btn">Register</button>
@@ -406,6 +694,7 @@
       const hud = document.getElementById("hud");
       const timerBox = document.getElementById("timerBox");
       const highScoreBox = document.getElementById("highScoreBox");
+      const salvageBox = document.getElementById("salvageBox");
       const difficultyLabel = document.getElementById("difficultyLabel");
       const powerupBox = document.getElementById("powerupBox");
       const powerupName = document.getElementById("powerupName");
@@ -413,6 +702,7 @@
       const menuOverlay = document.getElementById("menuOverlay");
       const gameOverOverlay = document.getElementById("gameOverOverlay");
       const finalScoreText = document.getElementById("finalScoreText");
+      const scoreBreakdownText = document.getElementById("scoreBreakdownText");
       const recordText = document.getElementById("recordText");
       const fadeOverlay = document.getElementById("fadeOverlay");
       const pauseBadge = document.getElementById("pauseBadge");
@@ -430,10 +720,28 @@
       const registerChainPlayerBtn = document.getElementById("registerChainPlayerBtn");
       const submitChainScoreBtn = document.getElementById("submitChainScoreBtn");
       const submitChainStatusText = document.getElementById("submitChainStatusText");
+      const latestHourlyPrizeText = document.getElementById("latestHourlyPrizeText");
+      const menuHourlyCountdown = document.getElementById("menuHourlyCountdown");
+      const gameOverHourlyCountdown = document.getElementById("gameOverHourlyCountdown");
+      const menuHourlyCountdownText = document.getElementById("menuHourlyCountdownText");
+      const gameOverHourlyCountdownText = document.getElementById("gameOverHourlyCountdownText");
+      const menuPotStatusText = document.getElementById("menuPotStatusText");
+      const menuPotBalanceText = document.getElementById("menuPotBalanceText");
+      const menuPotAddressInput = document.getElementById("menuPotAddressInput");
+      const copyPotAddressBtn = document.getElementById("copyPotAddressBtn");
+      const recentWinnersStatusText = document.getElementById("recentWinnersStatusText");
+      const recentWinnersList = document.getElementById("recentWinnersList");
+      const featuredRankList = document.getElementById("featuredRankList");
+      const featuredRankContextText = document.getElementById("featuredRankContextText");
+      const featuredRankDeltaText = document.getElementById("featuredRankDeltaText");
 
       const RELAY_BASE_URL = "http://127.0.0.1:8787/api";
       const PLAYER_HANDLE_STORAGE_KEY = "voidrunner_player_handle";
       const allowedDifficultyKeys = new Set(["easy", "normal", "hard"]);
+      const HOURLY_URGENCY_BLOCK_THRESHOLD = 10;
+      const APPROX_SECONDS_PER_BLOCK = 30;
+      const RECENT_WINNERS_PRIZE_TYPES = Object.freeze(["hourly", "daily", "weekly"]);
+      const MAX_RECENT_WINNERS = 3;
 
       let lastFinalScore = 0;
       let chainEntries = [];
@@ -444,6 +752,7 @@
         normal: null,
         hard: null
       };
+      let featuredRankPayload = null;
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -486,6 +795,7 @@
       let elapsedBeforePauseSeconds = 0;
       let playResumeTimestamp = 0;
       let survivalTime = 0;
+      let bonusTime = 0;
       let highScore = 0;
 
       let timeScale = 1;
@@ -715,7 +1025,19 @@
 
       let activePowerType = POWERUP.NONE;
       let activePowerRemaining = 0;
-      const activePowerDuration = 5;
+      let activePowerDuration = 0;
+
+      const BOOST_SPEED_MULTIPLIER = 1.15;
+      const BOOST_DURATION_SECONDS = 10;
+      const SHIELD_DURATION_SECONDS = 15;
+      const SALVAGE_BASE_MULTIPLIER = 1.5;
+      const SALVAGE_MAX_MULTIPLIER = 3;
+      const SALVAGE_STEP = 0.5;
+      const SALVAGE_DURATION_SECONDS = 5;
+
+      let salvageMultiplier = 0;
+      let salvageRemaining = 0;
+      let salvageRefreshCueUntil = 0;
 
       const shipFragments = [];
 
@@ -936,6 +1258,266 @@
         }
       }
 
+      function setLatestHourlyPrizeText(text, color) {
+        latestHourlyPrizeText.textContent = text;
+        latestHourlyPrizeText.style.color = color;
+      }
+
+      function getPrizeWinnerHandle(prizePayload) {
+        const prizeWinner = prizePayload && typeof prizePayload.winner === "object" ? prizePayload.winner : null;
+        const fallbackHandle = prizePayload && typeof prizePayload.handle === "string" ? prizePayload.handle : "";
+        const handleFromWinner = prizeWinner && typeof prizeWinner.handle === "string" ? prizeWinner.handle : "";
+        const winnerHandle = handleFromWinner || fallbackHandle;
+        return winnerHandle || "--";
+      }
+
+      function getPrizeWinnerScore(prizePayload) {
+        const prizeWinner = prizePayload && typeof prizePayload.winner === "object" ? prizePayload.winner : null;
+        const scoreFromWinner = prizeWinner && Number.isFinite(prizeWinner.score) ? prizeWinner.score : null;
+        const scoreFromRoot = prizePayload && Number.isFinite(prizePayload.score) ? prizePayload.score : null;
+        const winnerScore = scoreFromWinner ?? scoreFromRoot;
+        return Number.isFinite(winnerScore) ? formatTime(winnerScore) : "--";
+      }
+
+      function getPrizeWinnerDifficulty(prizePayload) {
+        const prizeWinner = prizePayload && typeof prizePayload.winner === "object" ? prizePayload.winner : null;
+        const difficultyFromWinner = prizeWinner && typeof prizeWinner.difficulty === "string" ? prizeWinner.difficulty : "";
+        const difficultyFromRoot = prizePayload && typeof prizePayload.difficulty === "string" ? prizePayload.difficulty : "";
+        const difficultyKey = (difficultyFromWinner || difficultyFromRoot || "").toLowerCase();
+        return DIFFICULTY[difficultyKey] ? DIFFICULTY[difficultyKey].label : (difficultyKey || "--").toUpperCase();
+      }
+
+      function getLatestPrizePayload(payload) {
+        if (payload && payload.prize && typeof payload.prize === "object") {
+          return payload.prize;
+        }
+        return payload;
+      }
+
+      function shortenTxid(txidValue) {
+        const txidText = typeof txidValue === "string" ? txidValue.trim() : "";
+        if (!txidText) return "";
+        if (txidText.length <= 14) return txidText;
+        return `${txidText.slice(0, 8)}...${txidText.slice(-6)}`;
+      }
+
+      function getPrizePayoutStatus(prizePayload) {
+        const isPaid = Boolean(prizePayload && prizePayload.paid === true);
+        const txidValue = prizePayload && typeof prizePayload.txid === "string" ? prizePayload.txid : "";
+
+        if (isPaid) {
+          const compactTxid = shortenTxid(txidValue);
+          return {
+            label: compactTxid ? `PAID (${compactTxid})` : "PAID",
+            color: "#65f5a8"
+          };
+        }
+
+        return {
+          label: "PENDING",
+          color: "#ffc857"
+        };
+      }
+
+      function setRecentWinnersStatus(text, color) {
+        recentWinnersStatusText.textContent = text;
+        recentWinnersStatusText.style.color = color;
+      }
+
+      function getPrizeTimestamp(prizePayload) {
+        const timestampValue = Number(prizePayload && prizePayload.timestamp);
+        return Number.isFinite(timestampValue) ? timestampValue : 0;
+      }
+
+      function renderRecentWinners(entries) {
+        recentWinnersList.innerHTML = "";
+
+        if (!entries.length) {
+          const emptyRow = document.createElement("li");
+          emptyRow.textContent = "No recent winners yet.";
+          recentWinnersList.appendChild(emptyRow);
+          return;
+        }
+
+        for (const winnerEntry of entries) {
+          const rowElement = document.createElement("li");
+          const typeElement = document.createElement("span");
+          const detailsElement = document.createElement("span");
+          const payoutElement = document.createElement("span");
+
+          const payoutStatus = getPrizePayoutStatus(winnerEntry.prize);
+          const winnerHandle = getPrizeWinnerHandle(winnerEntry.prize);
+          const winnerScore = getPrizeWinnerScore(winnerEntry.prize);
+          const payoutTxid = typeof winnerEntry.prize?.txid === "string" ? winnerEntry.prize.txid : "";
+          const payoutTxidText = payoutTxid ? ` tx:${shortenTxid(payoutTxid)}` : "";
+
+          typeElement.textContent = winnerEntry.type.toUpperCase();
+          detailsElement.textContent = `${winnerHandle} • ${winnerScore}`;
+          payoutElement.textContent = `${payoutStatus.label}${payoutTxidText}`;
+          payoutElement.style.color = payoutStatus.color;
+          if (payoutTxid) payoutElement.title = payoutTxid;
+
+          rowElement.appendChild(typeElement);
+          rowElement.appendChild(detailsElement);
+          rowElement.appendChild(payoutElement);
+          recentWinnersList.appendChild(rowElement);
+        }
+      }
+
+      async function loadRecentWinners() {
+        setRecentWinnersStatus("Loading recent winners...", "#9cc8e2");
+
+        try {
+          const winnerRows = [];
+
+          for (const prizeType of RECENT_WINNERS_PRIZE_TYPES) {
+            const response = await fetch(`${RELAY_BASE_URL}/prizes/latest?type=${encodeURIComponent(prizeType)}`);
+            if (response.status === 404) continue;
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const payload = await response.json();
+            const latestPrize = getLatestPrizePayload(payload);
+            if (!latestPrize || typeof latestPrize !== "object") continue;
+
+            winnerRows.push({
+              type: prizeType,
+              timestamp: getPrizeTimestamp(latestPrize),
+              prize: latestPrize
+            });
+          }
+
+          winnerRows.sort((leftEntry, rightEntry) => rightEntry.timestamp - leftEntry.timestamp);
+          const latestThreeWinners = winnerRows.slice(0, MAX_RECENT_WINNERS);
+          renderRecentWinners(latestThreeWinners);
+
+          if (latestThreeWinners.length) {
+            setRecentWinnersStatus("Latest winners from hourly/daily/weekly prize windows.", "#a6c6dd");
+          } else {
+            setRecentWinnersStatus("No prize winner records yet.", "#a6c6dd");
+          }
+        } catch {
+          renderRecentWinners([]);
+          setRecentWinnersStatus("Recent winners unavailable (relay offline).", "#ffb0b0");
+        }
+      }
+
+      function formatApproxTimeFromBlocks(blocksRemainingValue) {
+        const safeBlocksRemaining = Math.max(0, Math.floor(Number(blocksRemainingValue) || 0));
+        const totalApproximateMinutes = Math.round((safeBlocksRemaining * APPROX_SECONDS_PER_BLOCK) / 60);
+        if (totalApproximateMinutes < 60) {
+          return `~${totalApproximateMinutes}m`;
+        }
+        const hoursPart = Math.floor(totalApproximateMinutes / 60);
+        const minutesPart = totalApproximateMinutes % 60;
+        return minutesPart > 0 ? `~${hoursPart}h ${minutesPart}m` : `~${hoursPart}h`;
+      }
+
+      function setHourlyCountdownDisplay(text, isUrgent) {
+        menuHourlyCountdownText.textContent = text;
+        gameOverHourlyCountdownText.textContent = text;
+        menuHourlyCountdown.classList.toggle("urgent", isUrgent);
+        gameOverHourlyCountdown.classList.toggle("urgent", isUrgent);
+      }
+
+      function setMenuPotStatus(statusLabel, statusColor, balanceLabel, fundingAddress, targetLabel) {
+        menuPotStatusText.textContent = `Status: ${statusLabel}`;
+        menuPotStatusText.style.color = statusColor;
+        menuPotBalanceText.textContent = targetLabel
+          ? `Balance: ${balanceLabel} • ${targetLabel}`
+          : `Balance: ${balanceLabel}`;
+        menuPotAddressInput.value = fundingAddress || "--";
+      }
+
+      function formatPotBalance(balanceValue) {
+        if (!Number.isFinite(balanceValue)) return "--";
+        return `${balanceValue.toFixed(8)} SPACE`;
+      }
+
+      function formatPotDistanceToTarget(missingAmountValue) {
+        if (!Number.isFinite(missingAmountValue)) return "";
+        if (missingAmountValue <= 0) return "Target reached";
+        return `${missingAmountValue.toFixed(8)} SPACE to target`;
+      }
+
+      function getPotStatusColor(statusValue) {
+        if (statusValue === "FULLY_FUNDED") return "#65f5a8";
+        if (statusValue === "LOW") return "#ffc857";
+        if (statusValue === "UNFUNDED") return "#ffb0b0";
+        return "#a6c6dd";
+      }
+
+      async function loadMenuPotStatus() {
+        setMenuPotStatus("loading...", "#a6c6dd", "--", "Loading address...", "");
+
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/pot/status`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const payload = await response.json();
+          const statusValue = typeof payload?.status === "string" ? payload.status : "UNKNOWN";
+          const addressValue = typeof payload?.address === "string" ? payload.address : "--";
+          const balanceValue = Number(payload?.balance);
+          const missingToTargetValue = Number(payload?.missingToTarget);
+
+          setMenuPotStatus(
+            statusValue,
+            getPotStatusColor(statusValue),
+            formatPotBalance(balanceValue),
+            addressValue,
+            formatPotDistanceToTarget(missingToTargetValue)
+          );
+        } catch {
+          setMenuPotStatus("unavailable (relay offline)", "#ffb0b0", "--", "Unavailable", "");
+        }
+      }
+
+      async function loadHourlyPrizeWindowStatus() {
+        setHourlyCountdownDisplay("Loading hourly countdown...", false);
+
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/prize-window/status?type=hourly`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const payload = await response.json();
+          const blocksRemaining = Math.max(0, Math.floor(Number(payload?.blocksRemaining) || 0));
+          const percentComplete = Number(payload?.percentComplete);
+          const percentText = Number.isFinite(percentComplete) ? `${Math.max(0, Math.min(100, Math.round(percentComplete)))}%` : "--";
+          const approximateTimeText = formatApproxTimeFromBlocks(blocksRemaining);
+          const isUrgent = blocksRemaining < HOURLY_URGENCY_BLOCK_THRESHOLD;
+
+          setHourlyCountdownDisplay(
+            `Ends in ${blocksRemaining} blocks (${approximateTimeText}) • ${percentText} complete`,
+            isUrgent
+          );
+        } catch {
+          setHourlyCountdownDisplay("Hourly countdown unavailable (relay offline).", false);
+        }
+      }
+
+      async function loadLatestHourlyWinner() {
+        setLatestHourlyPrizeText("Loading latest hourly winner...", "#9cc8e2");
+
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/prizes/latest?type=hourly`);
+
+          if (response.status === 404) {
+            setLatestHourlyPrizeText("No hourly winner yet.", "#a6c6dd");
+            return;
+          }
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const payload = await response.json();
+          const latestPrize = getLatestPrizePayload(payload);
+          const winnerHandle = getPrizeWinnerHandle(latestPrize);
+          const winnerScore = getPrizeWinnerScore(latestPrize);
+          const winnerDifficulty = getPrizeWinnerDifficulty(latestPrize);
+          const payoutStatus = getPrizePayoutStatus(latestPrize);
+          setLatestHourlyPrizeText(`Winner: ${winnerHandle} | Score: ${winnerScore} | Difficulty: ${winnerDifficulty} | Payout: ${payoutStatus.label}`, payoutStatus.color);
+        } catch {
+          setLatestHourlyPrizeText("Latest hourly winner unavailable (relay offline).", "#ffb0b0");
+        }
+      }
+
       function applyPlayerStatus(player) {
         const handleFromInput = sanitizeHandle(playerInitialsInput.value);
         const canSubmit = Boolean(player && player.canSubmit);
@@ -1011,6 +1593,100 @@
         }
       }
 
+      function setFeaturedRankContextText(text, color = "#a6c6dd") {
+        featuredRankContextText.textContent = text;
+        featuredRankContextText.style.color = color;
+      }
+
+      function setFeaturedRankDeltaText(text, color = "#dcefff") {
+        featuredRankDeltaText.textContent = text;
+        featuredRankDeltaText.style.color = color;
+      }
+
+      function getFeaturedDeltaMessage(rankPayload) {
+        const payloadDeltas = rankPayload && typeof rankPayload.deltas === "object" ? rankPayload.deltas : null;
+        const payloadTargets = rankPayload && typeof rankPayload.targets === "object" ? rankPayload.targets : null;
+        const toLeader = payloadDeltas && Number.isFinite(payloadDeltas.toLeader) ? payloadDeltas.toLeader : null;
+        const toNextRank = payloadDeltas && Number.isFinite(payloadDeltas.toNextRank) ? payloadDeltas.toNextRank : null;
+        const toTopList = payloadDeltas && Number.isFinite(payloadDeltas.toTopList) ? payloadDeltas.toTopList : null;
+        const nextTarget = payloadTargets && payloadTargets.next ? payloadTargets.next : null;
+
+        if (toLeader !== null) {
+          return `Distance to #1: ${formatTime(toLeader)}`;
+        }
+
+        if (toNextRank !== null && nextTarget && typeof nextTarget.handle === "string") {
+          return `Need ${formatTime(toNextRank)} to pass #${nextTarget.rank} (${nextTarget.handle})`;
+        }
+
+        if (toTopList !== null) {
+          return `Need ${formatTime(toTopList)} to enter top 10`;
+        }
+
+        return "Set a normal run to get featured-chart rank context.";
+      }
+
+      function renderFeaturedRankBoard() {
+        featuredRankList.innerHTML = "";
+        const payloadTop = featuredRankPayload && Array.isArray(featuredRankPayload.top) ? featuredRankPayload.top : [];
+        const topFiveEntries = payloadTop.slice(0, 5);
+
+        if (!topFiveEntries.length) {
+          const emptyRow = document.createElement("li");
+          emptyRow.innerHTML = "<span>#--</span><span>NO ENTRIES</span><span>00:00.000</span>";
+          featuredRankList.appendChild(emptyRow);
+        } else {
+          for (const topEntry of topFiveEntries) {
+            const rowElement = document.createElement("li");
+            if (topEntry.rank === 1) rowElement.classList.add("featured-leader");
+            const entryHandle = topEntry.handle || "--";
+            const entryScore = Number.isFinite(topEntry.score) ? formatTime(topEntry.score) : "00:00.000";
+            rowElement.innerHTML = `<span>#${topEntry.rank}</span><span>${entryHandle}${topEntry.rank === 1 ? " (LEADER)" : ""}</span><span>${entryScore}</span>`;
+            featuredRankList.appendChild(rowElement);
+          }
+        }
+
+        const payloadPlayer = featuredRankPayload && typeof featuredRankPayload.player === "object" ? featuredRankPayload.player : null;
+        const playerRank = payloadPlayer && Number.isFinite(payloadPlayer.rank) ? payloadPlayer.rank : null;
+        const playerScore = payloadPlayer && Number.isFinite(payloadPlayer.score) ? payloadPlayer.score : null;
+
+        if (playerRank !== null && playerScore !== null) {
+          const rankContextLabel = payloadPlayer.inTopList
+            ? `Your featured rank: #${playerRank} (${formatTime(playerScore)})`
+            : `Your featured rank: #${playerRank} (${formatTime(playerScore)}) outside top 10`;
+          setFeaturedRankContextText(rankContextLabel, "#dcefff");
+        } else {
+          setFeaturedRankContextText("No featured-chart rank for this handle yet.", "#a6c6dd");
+        }
+
+        setFeaturedRankDeltaText(getFeaturedDeltaMessage(featuredRankPayload), "#dcefff");
+      }
+
+      async function loadFeaturedRankContext() {
+        const handle = sanitizeHandle(playerInitialsInput.value) || registeredPlayerHandle || readStoredHandle();
+
+        if (!handle) {
+          featuredRankPayload = { top: [], player: { rank: null, score: null }, deltas: {} };
+          renderFeaturedRankBoard();
+          return;
+        }
+
+        setFeaturedRankContextText("Loading featured rank...", "#9cc8e2");
+        setFeaturedRankDeltaText(" ", "#dcefff");
+
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/leaderboard/rank?handle=${encodeURIComponent(handle)}`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          featuredRankPayload = await response.json();
+          renderFeaturedRankBoard();
+        } catch {
+          featuredRankPayload = { top: [], player: { rank: null, score: null }, deltas: {} };
+          renderFeaturedRankBoard();
+          setFeaturedRankContextText("Featured rank unavailable (relay offline).", "#ffb0b0");
+          setFeaturedRankDeltaText(" ", "#dcefff");
+        }
+      }
+
       async function loadChainLeaderboard() {
         if (!allowedDifficultyKeys.has(selectedDifficulty)) return;
         setChainStatus("loading leaderboard...", "#a6c6dd");
@@ -1042,6 +1718,7 @@
           if (lockIndicator) lockIndicator.style.display = "none";
           updateSubmitButtonState();
           setSubmitStatus("enter handle (3-24 chars: a-z, 0-9, _, -)", "#ffb0b0");
+          loadFeaturedRankContext();
           return;
         }
 
@@ -1057,6 +1734,7 @@
           } else {
             setSubmitStatus(`handle ${handle} is available - use Register`, "#a6c6dd");
           }
+          loadFeaturedRankContext();
         } catch {
           clearRegisteredPlayerState();
           playerInitialsInput.disabled = false;
@@ -1067,6 +1745,7 @@
           if (lockIndicator) lockIndicator.style.display = "none";
           updateSubmitButtonState();
           setSubmitStatus("relay offline (status check failed)", "#ffb0b0");
+          loadFeaturedRankContext();
         }
       }
 
@@ -1172,6 +1851,7 @@
           setChainStatus("online", "#65f5a8");
           setSubmitStatus("submitted", "#65f5a8");
           renderChainLeaderboard();
+          loadFeaturedRankContext();
         } catch {
           setSubmitStatus("failed (relay or node unavailable)", "#ffb0b0");
           setChainStatus("offline (relay or node unavailable)", "#ffb0b0");
@@ -1190,13 +1870,44 @@
         if (!Number.isFinite(highScore)) highScore = 0;
       }
 
+      function getCurrentRunScore() {
+        return survivalTime + bonusTime;
+      }
+
       function saveHighScoreIfNeeded() {
-        if (survivalTime > highScore) {
-          highScore = survivalTime;
+        const currentRunScore = getCurrentRunScore();
+        if (currentRunScore > highScore) {
+          highScore = currentRunScore;
           localStorage.setItem(getHighScoreKey(), String(highScore));
           return true;
         }
         return false;
+      }
+
+      function activateSalvageMultiplier() {
+        if (salvageRemaining > 0 && salvageMultiplier > 0) {
+          salvageMultiplier = Math.min(SALVAGE_MAX_MULTIPLIER, salvageMultiplier + SALVAGE_STEP);
+        } else {
+          salvageMultiplier = SALVAGE_BASE_MULTIPLIER;
+        }
+        salvageRemaining = SALVAGE_DURATION_SECONDS;
+        salvageRefreshCueUntil = performance.now() + 250;
+      }
+
+      function updateSalvageAndBonus(deltaSeconds) {
+        if (salvageRemaining <= 0 || salvageMultiplier <= 1) {
+          salvageRemaining = 0;
+          salvageMultiplier = 0;
+          return;
+        }
+
+        bonusTime += deltaSeconds * (salvageMultiplier - 1);
+        salvageRemaining -= deltaSeconds;
+
+        if (salvageRemaining <= 0) {
+          salvageRemaining = 0;
+          salvageMultiplier = 0;
+        }
       }
 
       function randomRange(minValue, maxValue) {
@@ -1381,7 +2092,12 @@
 
         activePowerType = POWERUP.NONE;
         activePowerRemaining = 0;
+        activePowerDuration = 0;
         shipMaxSpeed = shipMaxSpeedBase;
+
+        bonusTime = 0;
+        salvageMultiplier = 0;
+        salvageRemaining = 0;
 
         asteroidSpawnAccumulator = 0;
         powerupSpawnTimer = 0;
@@ -1395,6 +2111,7 @@
 
       function applyPowerup(type) {
         activePowerType = type;
+        activePowerDuration = type === POWERUP.SHIELD ? SHIELD_DURATION_SECONDS : BOOST_DURATION_SECONDS;
         activePowerRemaining = activePowerDuration;
         if (type === POWERUP.SHIELD) {
           shipMaxSpeed = shipMaxSpeedBase;
@@ -1402,7 +2119,7 @@
             if (child.material && child.material.emissive) child.material.emissive.setHex(0x1d66d7);
           });
         } else if (type === POWERUP.BOOST) {
-          shipMaxSpeed = shipMaxSpeedBase * 2;
+          shipMaxSpeed = shipMaxSpeedBase * BOOST_SPEED_MULTIPLIER;
           shipRoot.children.forEach((child) => {
             if (child.material && child.material.emissive) child.material.emissive.setHex(0x7a4b0c);
           });
@@ -1574,6 +2291,7 @@
                 palette: [0x7d725f, 0x736b60, 0x8a8478, 0x5e574d]
               });
               playShieldHitSound();
+              activateSalvageMultiplier();
               recycleAsteroid(i);
             } else {
               triggerGameOver();
@@ -1682,9 +2400,24 @@
       }
 
       function updateHud() {
-        timerBox.textContent = `TIME ${formatTime(survivalTime)}`;
+        timerBox.textContent = `TIME ${formatTime(getCurrentRunScore())}`;
         highScoreBox.textContent = `LOCAL BEST ${formatTime(highScore)}`;
         difficultyLabel.textContent = `DIFF: ${DIFFICULTY[selectedDifficulty].label}`;
+
+        const isSalvageActive = salvageRemaining > 0 && salvageMultiplier > 1;
+        salvageBox.style.display = isSalvageActive ? "block" : "none";
+        if (isSalvageActive) {
+          salvageBox.textContent = `SALVAGE x${salvageMultiplier.toFixed(1)} · ${salvageRemaining.toFixed(1)}s`;
+          salvageBox.classList.toggle("salvage-refresh", performance.now() < salvageRefreshCueUntil);
+        } else {
+          salvageBox.classList.remove("salvage-refresh");
+        }
+      }
+
+      function renderScoreBreakdown() {
+        const totalScore = getCurrentRunScore();
+        finalScoreText.textContent = `Final Score: ${formatTime(totalScore)}`;
+        scoreBreakdownText.textContent = `Survival ${formatTime(survivalTime)} · Bonus ${formatTime(bonusTime)} · Total ${formatTime(totalScore)}`;
       }
 
       function setSelectedDifficulty(difficultyKey) {
@@ -1708,6 +2441,9 @@
         fadeOverlay.style.background = "rgba(0,0,0,0)";
         shipRoot.visible = true;
         setEngineAudioLevel(0);
+        loadHourlyPrizeWindowStatus();
+        loadMenuPotStatus();
+        loadRecentWinners();
       }
 
       function startGame() {
@@ -1718,6 +2454,7 @@
         elapsedBeforePauseSeconds = 0;
         playResumeTimestamp = performance.now();
         survivalTime = 0;
+        bonusTime = 0;
         gameState = STATE.PLAYING;
         hud.classList.remove("hidden");
         menuOverlay.classList.add("hidden");
@@ -1729,8 +2466,8 @@
 
       function showGameOverScreen() {
         const isNewRecord = saveHighScoreIfNeeded();
-        lastFinalScore = survivalTime;
-        finalScoreText.textContent = `Final Time: ${formatTime(survivalTime)}`;
+        lastFinalScore = getCurrentRunScore();
+        renderScoreBreakdown();
         recordText.textContent = `${isNewRecord ? "NEW LOCAL RECORD! " : "Local Best Time: "}${formatTime(highScore)}`;
         recordText.style.color = isNewRecord ? "#8cffbf" : "#a6c6dd";
         const storedHandle = readStoredHandle();
@@ -1742,7 +2479,10 @@
         const lockIndicator = document.getElementById("handleLockIndicator");
         if (lockIndicator) lockIndicator.style.display = lockedHandle ? "block" : "none";
         loadChainLeaderboard();
+        loadLatestHourlyWinner();
+        loadHourlyPrizeWindowStatus();
         refreshPlayerStatus();
+        loadFeaturedRankContext();
       }
 
       function togglePause() {
@@ -1844,6 +2584,32 @@
         registerChainPlayerBtn.addEventListener("click", () => registerPlayerForChain());
         submitChainScoreBtn.addEventListener("click", () => submitScoreToChain());
 
+        copyPotAddressBtn.addEventListener("click", async () => {
+          const addressValue = menuPotAddressInput.value || "";
+          if (!addressValue || addressValue === "--" || addressValue === "Unavailable" || addressValue === "Loading address...") {
+            return;
+          }
+
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(addressValue);
+            } else {
+              menuPotAddressInput.focus();
+              menuPotAddressInput.select();
+              document.execCommand("copy");
+              menuPotAddressInput.setSelectionRange(0, 0);
+              menuPotAddressInput.blur();
+            }
+            copyPotAddressBtn.textContent = "Copied";
+            window.setTimeout(() => {
+              copyPotAddressBtn.textContent = "Copy";
+            }, 900);
+          } catch {
+            menuPotAddressInput.focus();
+            menuPotAddressInput.select();
+          }
+        });
+
         playerInitialsInput.addEventListener("input", () => {
           playerInitialsInput.value = sanitizeHandle(playerInitialsInput.value);
           if (!lockedHandle) {
@@ -1853,6 +2619,7 @@
             const lockIndicator = document.getElementById("handleLockIndicator");
             if (lockIndicator) lockIndicator.style.display = "none";
             updateSubmitButtonState();
+            loadFeaturedRankContext();
           } else {
             playerInitialsInput.value = lockedHandle;
           }
@@ -1906,6 +2673,7 @@
 
           if (gameState === STATE.PLAYING) {
             survivalTime = elapsedBeforePauseSeconds + (now - playResumeTimestamp) / 1000;
+            updateSalvageAndBonus(deltaSeconds);
             updateStars(deltaSeconds);
             updateShip(deltaSeconds);
             updateAsteroids(deltaSeconds);
@@ -1944,6 +2712,36 @@
       }
 
       requestAnimationFrame(gameLoop);
+
+      window.__voidRunnerDebug = {
+        getState() {
+          return {
+            survivalTime,
+            bonusTime,
+            score: getCurrentRunScore(),
+            salvageMultiplier,
+            salvageRemaining,
+            activePowerType,
+            activePowerRemaining,
+            activePowerDuration
+          };
+        },
+        setSurvivalTimeForTest(seconds) {
+          survivalTime = Math.max(0, Number(seconds) || 0);
+        },
+        setBonusTimeForTest(seconds) {
+          bonusTime = Math.max(0, Number(seconds) || 0);
+        },
+        activateSalvageForTest() {
+          activateSalvageMultiplier();
+        },
+        updateSalvageForTest(deltaSeconds) {
+          updateSalvageAndBonus(Math.max(0, Number(deltaSeconds) || 0));
+        },
+        renderScoreBreakdownForTest() {
+          renderScoreBreakdown();
+        }
+      };
 
       window.addEventListener("beforeunload", () => {
         if (audio.engineOsc) audio.engineOsc.stop();

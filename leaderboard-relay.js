@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
+const crypto = require("crypto");
 const { URL } = require("url");
 
 function loadEnvFile() {
@@ -44,6 +45,65 @@ const RPC_TIMEOUT_MS = 10000;
 const SCAN_PAGE_SIZE = 100;
 const SCAN_MAX_PAGES = 30;
 const GAME_PREFIX = "g/voidrunner3d/";
+const GAME_HASH_NAME = `${GAME_PREFIX}gamehash`;
+const RELAY_HASH_NAME = `${GAME_PREFIX}relayhash`;
+const HASH_ALGORITHM = "sha256";
+const PRIZE_PREFIX = `${GAME_PREFIX}prizes/`;
+const RECORD_ENVELOPE_VERSION = 2;
+const RECORD_ENVELOPE_ALGORITHM = "sha256";
+const FEATURED_LEADERBOARD_DIFFICULTY = "normal";
+const DEFAULT_MVP_PAYOUT_AMOUNT = 0.01;
+const DEFAULT_MVP_ADMIN_KEY = "voidrunner3d-mvp-admin";
+const MVP_POT_FUNDING_ADDRESS = "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29";
+const MVP_POT_FULLY_FUNDED_THRESHOLD = 1;
+const MVP_POT_LOW_THRESHOLD = 0;
+const PRIZE_WINDOW_BLOCK_SIZES = Object.freeze({
+  hourly: 120,
+  daily: 2880,
+  weekly: 20160
+});
+
+const prizeTypeKeys = Object.freeze({
+  hourly: true,
+  daily: true,
+  weekly: true
+});
+
+const integrityModeKeys = Object.freeze({
+  strict: true,
+  warn: true,
+  dev: true
+});
+
+const integrityState = {
+  mode: "dev",
+  algorithm: HASH_ALGORITHM,
+  checkedAt: null,
+  skipped: false,
+  verified: false,
+  readOnly: false,
+  status: "pending",
+  reason: null,
+  strictFailure: false,
+  files: {
+    game: {
+      path: "index.html",
+      chainName: GAME_HASH_NAME,
+      actual: null,
+      expected: null,
+      match: null,
+      error: null
+    },
+    relay: {
+      path: "leaderboard-relay.exe",
+      chainName: RELAY_HASH_NAME,
+      actual: null,
+      expected: null,
+      match: null,
+      error: null
+    }
+  }
+};
 
 const difficultyKeys = Object.freeze({
   easy: true,
@@ -63,6 +123,118 @@ function sendJson(response, statusCode, payload) {
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   setCors(response);
   response.end(body);
+}
+
+function sanitizeIntegrityMode(rawMode) {
+  const normalizedMode = String(rawMode || "").toLowerCase().trim();
+  return Object.prototype.hasOwnProperty.call(integrityModeKeys, normalizedMode) ? normalizedMode : "dev";
+}
+
+function normalizeChainHash(rawValue) {
+  if (typeof rawValue !== "string") return null;
+  const normalizedHash = rawValue.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(normalizedHash) ? normalizedHash : null;
+}
+
+function computeFileHash(fileName) {
+  const filePath = path.join(__dirname, fileName);
+  const fileBuffer = fs.readFileSync(filePath);
+  return crypto.createHash(HASH_ALGORITHM).update(fileBuffer).digest("hex");
+}
+
+async function readExpectedHashFromChain(name) {
+  const nameState = await readName(name);
+  if (!nameState.exists) return null;
+  return normalizeChainHash(nameState.value);
+}
+
+function buildIntegrityStatusPayload() {
+  return {
+    mode: integrityState.mode,
+    algorithm: integrityState.algorithm,
+    checkedAt: integrityState.checkedAt,
+    skipped: integrityState.skipped,
+    verified: integrityState.verified,
+    readOnly: integrityState.readOnly,
+    status: integrityState.status,
+    reason: integrityState.reason,
+    files: integrityState.files
+  };
+}
+
+function isMutatingRequest(requestMethod, requestPathname) {
+  return requestMethod === "POST" && requestPathname.startsWith("/api/");
+}
+
+async function initializeIntegrityVerification() {
+  const configuredMode = sanitizeIntegrityMode(process.env.RELAY_INTEGRITY_MODE || "dev");
+  integrityState.mode = configuredMode;
+  integrityState.checkedAt = new Date().toISOString();
+
+  if (configuredMode === "dev") {
+    integrityState.skipped = true;
+    integrityState.verified = true;
+    integrityState.readOnly = false;
+    integrityState.status = "skipped";
+    integrityState.reason = "Integrity verification skipped in dev mode";
+    return;
+  }
+
+  integrityState.skipped = false;
+
+  try {
+    integrityState.files.game.actual = computeFileHash("index.html");
+  } catch (error) {
+    integrityState.files.game.error = error.message || "Failed to hash index.html";
+  }
+
+  try {
+    integrityState.files.relay.actual = computeFileHash("leaderboard-relay.exe");
+  } catch (error) {
+    integrityState.files.relay.error = error.message || "Failed to hash leaderboard-relay.exe";
+  }
+
+  try {
+    integrityState.files.game.expected = await readExpectedHashFromChain(GAME_HASH_NAME);
+  } catch (error) {
+    integrityState.files.game.error = error.message || "Failed to read game hash from chain";
+  }
+
+  try {
+    integrityState.files.relay.expected = await readExpectedHashFromChain(RELAY_HASH_NAME);
+  } catch (error) {
+    integrityState.files.relay.error = error.message || "Failed to read relay hash from chain";
+  }
+
+  integrityState.files.game.match =
+    !!integrityState.files.game.actual &&
+    !!integrityState.files.game.expected &&
+    integrityState.files.game.actual === integrityState.files.game.expected;
+  integrityState.files.relay.match =
+    !!integrityState.files.relay.actual &&
+    !!integrityState.files.relay.expected &&
+    integrityState.files.relay.actual === integrityState.files.relay.expected;
+
+  const verificationPassed = integrityState.files.game.match && integrityState.files.relay.match;
+  integrityState.verified = verificationPassed;
+
+  if (verificationPassed) {
+    integrityState.readOnly = false;
+    integrityState.status = "verified";
+    integrityState.reason = null;
+    return;
+  }
+
+  integrityState.reason = "Integrity verification failed or expected chain hash unavailable";
+  if (configuredMode === "warn") {
+    integrityState.readOnly = true;
+    integrityState.status = "degraded-read-only";
+    return;
+  }
+
+  integrityState.readOnly = true;
+  integrityState.strictFailure = true;
+  integrityState.status = "blocked";
 }
 
 async function callRpc(method, params) {
@@ -119,6 +291,14 @@ function sanitizeDifficulty(difficulty) {
   return Object.prototype.hasOwnProperty.call(difficultyKeys, difficulty) ? difficulty : null;
 }
 
+function sanitizePrizeType(prizeType) {
+  return Object.prototype.hasOwnProperty.call(prizeTypeKeys, prizeType) ? prizeType : null;
+}
+
+function getPrizeWindowSize(prizeType) {
+  return PRIZE_WINDOW_BLOCK_SIZES[prizeType] || null;
+}
+
 function sanitizeHandle(rawHandle) {
   if (typeof rawHandle !== "string") return null;
   const normalizedHandle = rawHandle.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
@@ -141,7 +321,69 @@ function sanitizeScore(rawScore) {
   return Math.round(parsedScore * 1000) / 1000;
 }
 
-function parseRecordValue(value, expectedHandle) {
+function sanitizePrizeIndex(rawIndex) {
+  const parsedIndex = Number(rawIndex);
+  if (!Number.isInteger(parsedIndex) || parsedIndex < 0) return null;
+  return parsedIndex;
+}
+
+function sanitizeBlockHeight(rawHeight) {
+  const parsedHeight = Number(rawHeight);
+  if (!Number.isInteger(parsedHeight) || parsedHeight < 0) return null;
+  return parsedHeight;
+}
+
+function sanitizeTimestampMs(rawTimestamp) {
+  const parsedTimestamp = Number(rawTimestamp);
+  if (!Number.isInteger(parsedTimestamp) || parsedTimestamp < 0) return null;
+  return parsedTimestamp;
+}
+
+function sanitizePayoutAmount(rawAmount) {
+  const parsedAmount = Number(rawAmount);
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return null;
+  return Math.round(parsedAmount * 100000000) / 100000000;
+}
+
+function sanitizePotBalance(rawBalance) {
+  const parsedBalance = Number(rawBalance);
+  if (!Number.isFinite(parsedBalance) || parsedBalance < 0) return null;
+  return Math.round(parsedBalance * 100000000) / 100000000;
+}
+
+function getMvpFundingStatus(balance) {
+  if (balance >= MVP_POT_FULLY_FUNDED_THRESHOLD) return "FULLY_FUNDED";
+  if (balance > MVP_POT_LOW_THRESHOLD) return "LOW";
+  return "UNFUNDED";
+}
+
+async function readMvpPotBalance() {
+  const rpcResult = await callRpc("getaddressbalance", [MVP_POT_FUNDING_ADDRESS]);
+  const rawBalance = rpcResult && typeof rpcResult === "object" ? rpcResult.balance : rpcResult;
+  const balance = sanitizePotBalance(rawBalance);
+  if (balance === null) {
+    throw new Error("Invalid pot balance returned by RPC");
+  }
+  return balance;
+}
+
+function sanitizeTxid(rawTxid) {
+  if (rawTxid === null || rawTxid === undefined) return null;
+  if (typeof rawTxid !== "string") return null;
+  const trimmedTxid = rawTxid.trim();
+  if (!trimmedTxid) return null;
+  return trimmedTxid;
+}
+
+function getPrizeRecordName(prizeType, prizeIndex) {
+  return `${PRIZE_PREFIX}${prizeType}/${prizeIndex}`;
+}
+
+function getPrizeLatestPointerName(prizeType) {
+  return `${PRIZE_PREFIX}${prizeType}/latest`;
+}
+
+function parsePrizeRecordValue(value, expectedType, expectedIndex) {
   if (typeof value !== "string" || value.length === 0) return null;
 
   let parsedValue;
@@ -152,10 +394,134 @@ function parseRecordValue(value, expectedHandle) {
   }
 
   if (!parsedValue || typeof parsedValue !== "object") return null;
-  const storedHandle = sanitizeHandle(parsedValue.handle);
-  if (!storedHandle || storedHandle !== expectedHandle) return null;
 
-  const scoresObject = parsedValue.scores && typeof parsedValue.scores === "object" ? parsedValue.scores : {};
+  const version = Number(parsedValue.version);
+  if (!Number.isInteger(version) || version < 1) return null;
+
+  const prizeType = sanitizePrizeType(String(parsedValue.type || "").toLowerCase());
+  if (!prizeType || prizeType !== expectedType) return null;
+
+  const prizeIndex = sanitizePrizeIndex(parsedValue.index);
+  if (prizeIndex === null || prizeIndex !== expectedIndex) return null;
+
+  const winnerHandle = sanitizeHandle(parsedValue.winner);
+  const score = sanitizeScore(parsedValue.score);
+  const difficulty = sanitizeDifficulty(String(parsedValue.difficulty || "").toLowerCase());
+  const blockStart = sanitizeBlockHeight(parsedValue.blockStart);
+  const blockEnd = sanitizeBlockHeight(parsedValue.blockEnd);
+  const paid = typeof parsedValue.paid === "boolean" ? parsedValue.paid : null;
+  const paidAtHeight = parsedValue.paidAtHeight === null || parsedValue.paidAtHeight === undefined
+    ? null
+    : sanitizeBlockHeight(parsedValue.paidAtHeight);
+  const timestamp = sanitizeTimestampMs(parsedValue.timestamp);
+  const txid = parsedValue.txid === null || parsedValue.txid === undefined ? null : sanitizeTxid(parsedValue.txid);
+
+  if (!winnerHandle || score === null || !difficulty || blockStart === null || blockEnd === null || paid === null || timestamp === null) {
+    return null;
+  }
+
+  if (blockEnd < blockStart) return null;
+  if (paidAtHeight !== null && paidAtHeight < blockEnd) return null;
+  if (paid && !txid) return null;
+
+  return {
+    version,
+    type: prizeType,
+    index: prizeIndex,
+    winner: winnerHandle,
+    score,
+    difficulty,
+    blockStart,
+    blockEnd,
+    paid,
+    txid,
+    paidAtHeight,
+    timestamp
+  };
+}
+
+function serializePrizeRecordValue(prizeRecord) {
+  return JSON.stringify({
+    version: prizeRecord.version,
+    type: prizeRecord.type,
+    index: prizeRecord.index,
+    winner: prizeRecord.winner,
+    score: prizeRecord.score,
+    difficulty: prizeRecord.difficulty,
+    blockStart: prizeRecord.blockStart,
+    blockEnd: prizeRecord.blockEnd,
+    paid: prizeRecord.paid,
+    txid: prizeRecord.txid,
+    paidAtHeight: prizeRecord.paidAtHeight,
+    timestamp: prizeRecord.timestamp
+  });
+}
+
+function normalizePrizeRecordInput(parsedBody) {
+  if (!parsedBody || typeof parsedBody !== "object") return null;
+  const prizeType = sanitizePrizeType(String(parsedBody.type || "").toLowerCase());
+  const prizeIndex = sanitizePrizeIndex(parsedBody.index);
+  if (!prizeType || prizeIndex === null) return null;
+
+  return parsePrizeRecordValue(JSON.stringify({
+    version: parsedBody.version,
+    type: prizeType,
+    index: prizeIndex,
+    winner: parsedBody.winner,
+    score: parsedBody.score,
+    difficulty: parsedBody.difficulty,
+    blockStart: parsedBody.blockStart,
+    blockEnd: parsedBody.blockEnd,
+    paid: parsedBody.paid,
+    txid: parsedBody.txid,
+    paidAtHeight: parsedBody.paidAtHeight,
+    timestamp: parsedBody.timestamp
+  }), prizeType, prizeIndex);
+}
+
+function parseRecordValue(value, expectedHandle) {
+  if (typeof value !== "string" || value.length === 0) return null;
+
+  let parsedEnvelope;
+  try {
+    parsedEnvelope = JSON.parse(value);
+  } catch {
+    return null;
+  }
+
+  if (!parsedEnvelope || typeof parsedEnvelope !== "object") return null;
+
+  const envelopeVersion = Number(parsedEnvelope.version);
+  if (!Number.isInteger(envelopeVersion) || envelopeVersion !== RECORD_ENVELOPE_VERSION) return null;
+  if (parsedEnvelope.game !== "voidrunner3d") return null;
+  if (parsedEnvelope.algorithm !== RECORD_ENVELOPE_ALGORITHM) return null;
+
+  const envelopeHandle = sanitizeHandle(parsedEnvelope.handle);
+  if (!envelopeHandle || envelopeHandle !== expectedHandle) return null;
+
+  const salt = typeof parsedEnvelope.salt === "string" ? parsedEnvelope.salt : "";
+  const encodedPayload = typeof parsedEnvelope.payload === "string" ? parsedEnvelope.payload : "";
+  const providedDigest = typeof parsedEnvelope.digest === "string" ? parsedEnvelope.digest : "";
+  if (!salt || !encodedPayload || !providedDigest) return null;
+
+  const expectedDigest = crypto
+    .createHash(RECORD_ENVELOPE_ALGORITHM)
+    .update(`${envelopeHandle}:${salt}:${encodedPayload}`)
+    .digest("hex");
+  if (providedDigest !== expectedDigest) return null;
+
+  let payloadObject;
+  try {
+    payloadObject = JSON.parse(Buffer.from(encodedPayload, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (!payloadObject || typeof payloadObject !== "object") return null;
+
+  const payloadHandle = sanitizeHandle(payloadObject.handle);
+  if (!payloadHandle || payloadHandle !== envelopeHandle) return null;
+
+  const scoresObject = payloadObject.scores && typeof payloadObject.scores === "object" ? payloadObject.scores : {};
   const normalizedScores = {};
 
   for (const difficulty of Object.keys(difficultyKeys)) {
@@ -179,7 +545,7 @@ function parseRecordValue(value, expectedHandle) {
   }
 
   return {
-    handle: storedHandle,
+    handle: envelopeHandle,
     scores: normalizedScores
   };
 }
@@ -195,11 +561,30 @@ function serializeRecordValue(handle, scoresByDifficulty) {
     };
   }
 
-  return JSON.stringify({
-    version: 1,
-    game: "voidrunner3d",
+  const payloadObject = {
     handle,
     scores: persistedScores
+  };
+
+  const encodedPayload = Buffer.from(JSON.stringify(payloadObject), "utf8").toString("base64");
+  const salt = crypto
+    .createHash(RECORD_ENVELOPE_ALGORITHM)
+    .update(`voidrunner3d:${handle}:${JSON.stringify(persistedScores)}`)
+    .digest("hex")
+    .slice(0, 16);
+  const digest = crypto
+    .createHash(RECORD_ENVELOPE_ALGORITHM)
+    .update(`${handle}:${salt}:${encodedPayload}`)
+    .digest("hex");
+
+  return JSON.stringify({
+    version: RECORD_ENVELOPE_VERSION,
+    game: "voidrunner3d",
+    algorithm: RECORD_ENVELOPE_ALGORITHM,
+    handle,
+    salt,
+    payload: encodedPayload,
+    digest
   });
 }
 
@@ -364,8 +749,44 @@ async function scanRecordNamesByPrefix(prefix) {
   return matchedNames;
 }
 
+async function getCurrentBlockHeight() {
+  const currentBlockHeight = sanitizeBlockHeight(await callRpc("getblockcount", []));
+  if (currentBlockHeight === null) {
+    throw new Error("Invalid block height returned by RPC");
+  }
+  return currentBlockHeight;
+}
+
+function buildPrizeWindowStatus(prizeType, currentBlockHeight) {
+  const windowSize = getPrizeWindowSize(prizeType);
+  if (!windowSize) return null;
+
+  const currentWindowIndex = Math.floor(currentBlockHeight / windowSize);
+  const currentWindowStartHeight = currentWindowIndex * windowSize;
+  const blocksIntoWindow = currentBlockHeight - currentWindowStartHeight;
+  const blocksRemaining = Math.max(0, windowSize - (blocksIntoWindow + 1));
+  const percentComplete = Math.round((((blocksIntoWindow + 1) / windowSize) * 100) * 1000) / 1000;
+
+  return {
+    type: prizeType,
+    currentBlockHeight,
+    currentWindowIndex,
+    windowSize,
+    blocksRemaining,
+    percentComplete
+  };
+}
+
 async function getLeaderboardEntriesForDifficulty(difficulty) {
-  const scannedRows = await scanRecordNamesByPrefix(GAME_PREFIX);
+  const leaderboardCandidates = await getLeaderboardCandidatesForDifficulty(difficulty);
+  return leaderboardCandidates.slice(0, MAX_ENTRIES).map((entry, index) => ({
+    rank: index + 1,
+    handle: entry.handle,
+    score: entry.score
+  }));
+}
+
+function collectLeaderboardCandidates(scannedRows, difficulty) {
   const candidateEntries = [];
 
   for (const row of scannedRows) {
@@ -394,11 +815,207 @@ async function getLeaderboardEntriesForDifficulty(difficulty) {
     return rightEntry.updatedAt - leftEntry.updatedAt;
   });
 
-  return candidateEntries.slice(0, MAX_ENTRIES).map((entry, index) => ({
+  return candidateEntries;
+}
+
+async function getLeaderboardCandidatesForDifficulty(difficulty) {
+  const scannedRows = await scanRecordNamesByPrefix(GAME_PREFIX);
+  return collectLeaderboardCandidates(scannedRows, difficulty);
+}
+
+function roundScoreDelta(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.round(value * 1000) / 1000;
+}
+
+function buildLeaderboardRankPayload({ handle, difficulty, leaderboardCandidates, fallbackPlayerScore }) {
+  const topEntries = leaderboardCandidates.slice(0, MAX_ENTRIES).map((entry, index) => ({
     rank: index + 1,
     handle: entry.handle,
     score: entry.score
   }));
+
+  const leaderEntry = topEntries[0] || null;
+  const topListCutoffEntry = topEntries.length === MAX_ENTRIES ? topEntries[MAX_ENTRIES - 1] : null;
+  const rankedPlayerIndex = leaderboardCandidates.findIndex((entry) => entry.handle === handle);
+  const rankedPlayerEntry = rankedPlayerIndex >= 0 ? leaderboardCandidates[rankedPlayerIndex] : null;
+  const playerScore = rankedPlayerEntry ? rankedPlayerEntry.score : fallbackPlayerScore;
+  const playerRank = rankedPlayerEntry ? rankedPlayerIndex + 1 : null;
+  const playerInTopList = playerRank !== null && playerRank <= MAX_ENTRIES;
+
+  const nextRankCandidate = rankedPlayerIndex > 0 ? leaderboardCandidates[rankedPlayerIndex - 1] : null;
+  const nextRankEntry = nextRankCandidate
+    ? {
+        rank: rankedPlayerIndex,
+        handle: nextRankCandidate.handle,
+        score: nextRankCandidate.score
+      }
+    : null;
+
+  const deltaToNextRank = nextRankCandidate && playerScore !== null
+    ? roundScoreDelta(nextRankCandidate.score - playerScore)
+    : null;
+  const deltaToLeader = leaderEntry && playerScore !== null
+    ? roundScoreDelta(leaderEntry.score - playerScore)
+    : null;
+  const deltaToTopList = topListCutoffEntry && playerScore !== null && !playerInTopList
+    ? roundScoreDelta(topListCutoffEntry.score - playerScore)
+    : null;
+
+  return {
+    ok: true,
+    featuredDifficulty: difficulty,
+    player: {
+      handle,
+      rank: playerRank,
+      score: playerScore,
+      inTopList: playerInTopList
+    },
+    deltas: {
+      toNextRank: deltaToNextRank,
+      toLeader: deltaToLeader,
+      toTopList: deltaToTopList
+    },
+    targets: {
+      leader: leaderEntry,
+      nextRank: nextRankEntry,
+      topListCutoff: topListCutoffEntry
+    },
+    top: topEntries
+  };
+}
+
+async function writePrizeRecord(prizeRecord) {
+  const recordName = getPrizeRecordName(prizeRecord.type, prizeRecord.index);
+  const recordValue = serializePrizeRecordValue(prizeRecord);
+  await ensureNameRegistered(recordName, recordValue);
+  await callRpc("name_update", [recordName, recordValue]);
+
+  const latestPointerName = getPrizeLatestPointerName(prizeRecord.type);
+  const latestPointerValue = JSON.stringify({ index: prizeRecord.index, updatedAt: Date.now() });
+  await ensureNameRegistered(latestPointerName, latestPointerValue);
+  await callRpc("name_update", [latestPointerName, latestPointerValue]);
+
+  return {
+    recordName,
+    latestPointerName
+  };
+}
+
+async function readLatestPrizeRecordByType(prizeType) {
+  const latestPointerState = await readName(getPrizeLatestPointerName(prizeType));
+  if (latestPointerState.exists) {
+    try {
+      const pointerBody = JSON.parse(latestPointerState.value);
+      const pointedIndex = sanitizePrizeIndex(pointerBody?.index);
+      if (pointedIndex !== null) {
+        const pointedRecordState = await readName(getPrizeRecordName(prizeType, pointedIndex));
+        if (pointedRecordState.exists) {
+          const pointedRecord = parsePrizeRecordValue(pointedRecordState.value, prizeType, pointedIndex);
+          if (pointedRecord) {
+            return {
+              strategy: "pointer",
+              prize: pointedRecord
+            };
+          }
+        }
+      }
+    } catch {
+      // Fallback to scan strategy below.
+    }
+  }
+
+  const scannedRows = await scanRecordNamesByPrefix(`${PRIZE_PREFIX}${prizeType}/`);
+  let latestPrize = null;
+
+  for (const row of scannedRows) {
+    const onChainName = typeof row?.name === "string" ? row.name : "";
+    const onChainValue = typeof row?.value === "string" ? row.value : "";
+    if (onChainName === getPrizeLatestPointerName(prizeType)) continue;
+
+    const indexText = onChainName.slice(`${PRIZE_PREFIX}${prizeType}/`.length);
+    const index = sanitizePrizeIndex(indexText);
+    if (index === null) continue;
+
+    const parsedPrize = parsePrizeRecordValue(onChainValue, prizeType, index);
+    if (!parsedPrize) continue;
+
+    if (!latestPrize || parsedPrize.index > latestPrize.index) {
+      latestPrize = parsedPrize;
+    }
+  }
+
+  return {
+    strategy: "scan-max-index",
+    prize: latestPrize
+  };
+}
+
+async function closePrizeWindowMvp({ prizeType, difficulty, blockStart, blockEnd, payoutAmount }) {
+  const leaderboardEntries = await getLeaderboardEntriesForDifficulty(difficulty);
+  if (!leaderboardEntries.length) {
+    return {
+      ok: false,
+      reason: "no-winner",
+      message: "No leaderboard entries available for selected difficulty"
+    };
+  }
+
+  const winnerEntry = leaderboardEntries[0];
+  const latestPrizeResult = await readLatestPrizeRecordByType(prizeType);
+  const nextPrizeIndex = latestPrizeResult.prize ? latestPrizeResult.prize.index + 1 : 0;
+
+  let paid = false;
+  let txid = null;
+  let paidAtHeight = null;
+  let payoutError = null;
+
+  try {
+    const payoutTargetName = getIdentityNameForHandle(winnerEntry.handle);
+    const payoutResult = await callRpc("sendtoname", [payoutTargetName, payoutAmount]);
+    const normalizedTxid = sanitizeTxid(payoutResult);
+    if (!normalizedTxid) {
+      throw new Error("Payout RPC did not return a valid txid");
+    }
+    txid = normalizedTxid;
+    paidAtHeight = await callRpc("getblockcount", []);
+    paid = true;
+  } catch (error) {
+    payoutError = error && error.message ? String(error.message) : "Payout failed";
+  }
+
+  const prizeRecord = {
+    version: 1,
+    type: prizeType,
+    index: nextPrizeIndex,
+    winner: winnerEntry.handle,
+    score: winnerEntry.score,
+    difficulty,
+    blockStart,
+    blockEnd,
+    paid,
+    txid,
+    paidAtHeight,
+    timestamp: Date.now()
+  };
+
+  const writeResult = await writePrizeRecord(prizeRecord);
+
+  return {
+    ok: true,
+    strategy: "manual-close-mvp",
+    payoutAmount,
+    winner: winnerEntry,
+    payout: {
+      paid,
+      txid,
+      paidAtHeight,
+      error: payoutError
+    },
+    recordName: writeResult.recordName,
+    latestPointerName: writeResult.latestPointerName,
+    prize: prizeRecord
+  };
 }
 
 function toApiPlayerStatus(status) {
@@ -450,9 +1067,23 @@ const server = http.createServer(async (request, response) => {
   }
 
   try {
+    if (integrityState.readOnly && isMutatingRequest(request.method, requestUrl.pathname)) {
+      sendJson(response, 503, {
+        ok: false,
+        error: "Relay is in read-only mode due to integrity verification",
+        integrity: buildIntegrityStatusPayload()
+      });
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/api/health") {
       await callRpc("getblockcount", []);
-      sendJson(response, 200, { ok: true, relay: "up", node: "up" });
+      sendJson(response, 200, {
+        ok: true,
+        relay: "up",
+        node: "up",
+        integrity: buildIntegrityStatusPayload()
+      });
       return;
     }
 
@@ -484,6 +1115,31 @@ const server = http.createServer(async (request, response) => {
         ok: true,
         player: toApiPlayerStatus(playerStatus)
       });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/leaderboard/rank") {
+      const handle = sanitizeHandle(requestUrl.searchParams.get("handle") || "");
+      if (!handle) {
+        sendJson(response, 400, { ok: false, error: "Invalid handle" });
+        return;
+      }
+
+      const featuredDifficulty = FEATURED_LEADERBOARD_DIFFICULTY;
+      const [leaderboardCandidates, playerStatus] = await Promise.all([
+        getLeaderboardCandidatesForDifficulty(featuredDifficulty),
+        readPlayerStatus(handle)
+      ]);
+
+      const featuredScoreEntry = playerStatus.record?.scores?.[featuredDifficulty] || null;
+      const rankPayload = buildLeaderboardRankPayload({
+        handle,
+        difficulty: featuredDifficulty,
+        leaderboardCandidates,
+        fallbackPlayerScore: featuredScoreEntry ? featuredScoreEntry.score : null
+      });
+
+      sendJson(response, 200, rankPayload);
       return;
     }
 
@@ -558,12 +1214,180 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && requestUrl.pathname === "/api/prizes") {
+      const rawBody = await readRequestBody(request);
+      let parsedBody;
+      try {
+        parsedBody = JSON.parse(rawBody || "{}");
+      } catch {
+        sendJson(response, 400, { ok: false, error: "Invalid JSON body" });
+        return;
+      }
+
+      const normalizedPrizeRecord = normalizePrizeRecordInput(parsedBody);
+      if (!normalizedPrizeRecord) {
+        sendJson(response, 400, { ok: false, error: "Invalid prize record payload" });
+        return;
+      }
+
+      const writeResult = await writePrizeRecord(normalizedPrizeRecord);
+      sendJson(response, 200, {
+        ok: true,
+        strategy: "write-record-and-pointer",
+        recordName: writeResult.recordName,
+        latestPointerName: writeResult.latestPointerName,
+        prize: normalizedPrizeRecord
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/prizes/latest") {
+      const prizeType = sanitizePrizeType(String(requestUrl.searchParams.get("type") || "").toLowerCase());
+      if (!prizeType) {
+        sendJson(response, 400, { ok: false, error: "Invalid prize type" });
+        return;
+      }
+
+      const latestPrizeResult = await readLatestPrizeRecordByType(prizeType);
+      if (!latestPrizeResult.prize) {
+        sendJson(response, 404, {
+          ok: false,
+          error: "No prize record found",
+          type: prizeType,
+          strategy: latestPrizeResult.strategy
+        });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ok: true,
+        type: prizeType,
+        strategy: latestPrizeResult.strategy,
+        prize: latestPrizeResult.prize
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/prize-window/status") {
+      const prizeType = sanitizePrizeType(String(requestUrl.searchParams.get("type") || "").toLowerCase());
+      if (!prizeType) {
+        sendJson(response, 400, { ok: false, error: "Invalid prize type" });
+        return;
+      }
+
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const prizeWindowStatus = buildPrizeWindowStatus(prizeType, currentBlockHeight);
+      if (!prizeWindowStatus) {
+        sendJson(response, 400, { ok: false, error: "Invalid prize type" });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ok: true,
+        ...prizeWindowStatus
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/pot/status") {
+      try {
+        const balance = await readMvpPotBalance();
+        const missingToFullyFunded = Math.max(0, Math.round((MVP_POT_FULLY_FUNDED_THRESHOLD - balance) * 100000000) / 100000000);
+        sendJson(response, 200, {
+          ok: true,
+          address: MVP_POT_FUNDING_ADDRESS,
+          balance,
+          status: getMvpFundingStatus(balance),
+          rpcAvailable: true,
+          targetBalance: MVP_POT_FULLY_FUNDED_THRESHOLD,
+          missingToTarget: missingToFullyFunded
+        });
+      } catch (potError) {
+        sendJson(response, 200, {
+          ok: true,
+          address: MVP_POT_FUNDING_ADDRESS,
+          status: "UNKNOWN",
+          rpcAvailable: false,
+          targetBalance: MVP_POT_FULLY_FUNDED_THRESHOLD,
+          missingToTarget: null,
+          warning: potError && potError.message ? String(potError.message) : "Pot balance unavailable"
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/prizes/close-window") {
+      const rawBody = await readRequestBody(request);
+      let parsedBody;
+      try {
+        parsedBody = JSON.parse(rawBody || "{}");
+      } catch {
+        sendJson(response, 400, { ok: false, error: "Invalid JSON body" });
+        return;
+      }
+
+      const providedAdminKey = typeof parsedBody.adminKey === "string" ? parsedBody.adminKey : "";
+      const expectedAdminKey = process.env.MVP_ADMIN_KEY || DEFAULT_MVP_ADMIN_KEY;
+      if (!providedAdminKey || providedAdminKey !== expectedAdminKey) {
+        sendJson(response, 403, { ok: false, error: "Forbidden: invalid admin key" });
+        return;
+      }
+
+      const prizeType = sanitizePrizeType(String(parsedBody.type || "").toLowerCase());
+      const difficulty = sanitizeDifficulty(String(parsedBody.difficulty || "").toLowerCase());
+      const blockStart = sanitizeBlockHeight(parsedBody.blockStart);
+      const blockEnd = sanitizeBlockHeight(parsedBody.blockEnd);
+      const payoutAmount = sanitizePayoutAmount(
+        parsedBody.payoutAmount === undefined ? DEFAULT_MVP_PAYOUT_AMOUNT : parsedBody.payoutAmount
+      );
+
+      if (!prizeType || !difficulty || blockStart === null || blockEnd === null || blockEnd < blockStart || payoutAmount === null) {
+        sendJson(response, 400, { ok: false, error: "Invalid close-window payload" });
+        return;
+      }
+
+      const closeResult = await closePrizeWindowMvp({
+        prizeType,
+        difficulty,
+        blockStart,
+        blockEnd,
+        payoutAmount
+      });
+
+      if (!closeResult.ok) {
+        sendJson(response, 409, {
+          ok: false,
+          error: closeResult.message,
+          reason: closeResult.reason
+        });
+        return;
+      }
+
+      sendJson(response, 200, closeResult);
+      return;
+    }
+
     sendJson(response, 404, { ok: false, error: "Not found" });
   } catch (error) {
     sendJson(response, 502, { ok: false, error: error.message || "Relay error" });
   }
 });
 
-server.listen(RELAY_PORT, RELAY_HOST, () => {
-  console.log(`Void Runner relay listening on http://${RELAY_HOST}:${RELAY_PORT}`);
+async function bootstrapRelayServer() {
+  await initializeIntegrityVerification();
+
+  if (integrityState.strictFailure) {
+    console.error("Relay startup blocked: strict integrity verification failed");
+    process.exitCode = 1;
+    return;
+  }
+
+  server.listen(RELAY_PORT, RELAY_HOST, () => {
+    console.log(`Void Runner relay listening on http://${RELAY_HOST}:${RELAY_PORT}`);
+  });
+}
+
+bootstrapRelayServer().catch((error) => {
+  console.error(`Relay bootstrap error: ${error.message || error}`);
+  process.exitCode = 1;
 });

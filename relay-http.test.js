@@ -9,6 +9,8 @@
 const http = require("http");
 const { spawn } = require("child_process");
 const path = require("path");
+const crypto = require("crypto");
+const fs = require("fs");
 
 const TEST_PORT = 8788;
 const BASE = `http://127.0.0.1:${TEST_PORT}/api`;
@@ -40,7 +42,12 @@ function request(method, urlPath, body) {
 
 let relayProc = null;
 
-async function startRelay(initialStore = {}) {
+function computeFileHash(fileName) {
+  const filePath = path.join(__dirname, fileName);
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+async function startRelay(initialStore = {}, options = {}) {
   return new Promise((resolve, reject) => {
     const serializedStore = JSON.stringify(initialStore).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
     const relayPath = path.join(__dirname, "leaderboard-relay.js").replace(/\\/g, "\\\\");
@@ -104,6 +111,33 @@ async function startRelay(initialStore = {}) {
           return buildJsonResponse({ result: rows });
         }
 
+        if (rpcRequest.method === 'sendtoname') {
+          const targetName = String(params[0] || '');
+          const amount = Number(params[1]);
+          if (!targetName.startsWith('p/')) {
+            return buildJsonResponse({ error: { code: -8, message: 'invalid destination name' } });
+          }
+          if (!Number.isFinite(amount) || amount <= 0) {
+            return buildJsonResponse({ error: { code: -8, message: 'invalid amount' } });
+          }
+          if (targetName === 'p/payoutfail') {
+            return buildJsonResponse({ error: { code: -6, message: 'insufficient funds' } });
+          }
+          return buildJsonResponse({ result: 'txid-' + targetName.slice(2) });
+        }
+
+        if (rpcRequest.method === 'getaddressbalance') {
+          const targetAddress = String(params[0] || '');
+          if (targetAddress !== 'RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29') {
+            return buildJsonResponse({ error: { code: -5, message: 'invalid address' } });
+          }
+          if (state.has('__potBalanceRaw')) {
+            return buildJsonResponse({ result: state.get('__potBalanceRaw') });
+          }
+          const configuredBalance = Number(state.get('__potBalance') || 0);
+          return buildJsonResponse({ result: { balance: configuredBalance } });
+        }
+
         return buildJsonResponse({ error: { code: -32601, message: 'Unknown RPC method' } });
       };
 
@@ -120,6 +154,10 @@ async function startRelay(initialStore = {}) {
     `;
 
     relayProc = spawn(process.execPath, ["-e", wrapperCode], {
+      env: {
+        ...process.env,
+        RELAY_INTEGRITY_MODE: options.integrityMode || "dev"
+      },
       stdio: ["ignore", "pipe", "pipe"]
     });
 
@@ -162,11 +200,29 @@ async function waitForRelay(maxMs = 3000) {
 }
 
 function createRecordValue(handle, scoresByDifficulty) {
-  return JSON.stringify({
-    version: 1,
-    game: "voidrunner3d",
+  const payloadObject = {
     handle,
     scores: scoresByDifficulty
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payloadObject), "utf8").toString("base64");
+  const salt = crypto
+    .createHash("sha256")
+    .update(`voidrunner3d:${handle}:${JSON.stringify(scoresByDifficulty)}`)
+    .digest("hex")
+    .slice(0, 16);
+  const digest = crypto
+    .createHash("sha256")
+    .update(`${handle}:${salt}:${encodedPayload}`)
+    .digest("hex");
+
+  return JSON.stringify({
+    version: 2,
+    game: "voidrunner3d",
+    algorithm: "sha256",
+    handle,
+    salt,
+    payload: encodedPayload,
+    digest
   });
 }
 
@@ -198,6 +254,66 @@ function section(title) {
 }
 
 async function runTests() {
+  section("integrity mode - dev skip verification");
+  await withRelay({}, async () => {
+    const healthResponse = await request("GET", "/health");
+    assert("dev mode health returns 200", healthResponse.status === 200, `got ${healthResponse.status}`);
+    assert("dev mode marks integrity as skipped", healthResponse.body?.integrity?.status === "skipped", JSON.stringify(healthResponse.body?.integrity));
+    assert("dev mode keeps full write access", healthResponse.body?.integrity?.readOnly === false, JSON.stringify(healthResponse.body?.integrity));
+
+    const registerResponse = await request("POST", "/player/register", { handle: "devmode01" });
+    assert("dev mode allows mutating routes", registerResponse.status === 200, `got ${registerResponse.status}`);
+  });
+
+  section("integrity mode - warn mismatch enforces read-only");
+  await startRelay({}, { integrityMode: "warn" });
+  await waitForRelay();
+  try {
+    const healthResponse = await request("GET", "/health");
+    assert("warn mismatch health returns 200", healthResponse.status === 200, `got ${healthResponse.status}`);
+    assert("warn mismatch reports degraded read-only", healthResponse.body?.integrity?.status === "degraded-read-only", JSON.stringify(healthResponse.body?.integrity));
+    assert("warn mismatch sets readOnly=true", healthResponse.body?.integrity?.readOnly === true, JSON.stringify(healthResponse.body?.integrity));
+
+    const registerResponse = await request("POST", "/player/register", { handle: "warnmode01" });
+    assert("warn mismatch blocks mutating routes", registerResponse.status === 503, `got ${registerResponse.status}`);
+  } finally {
+    stopRelay();
+  }
+
+  section("integrity mode - warn verification success keeps full access");
+  await startRelay({
+    "g/voidrunner3d/gamehash": computeFileHash("index.html"),
+    "g/voidrunner3d/relayhash": computeFileHash("leaderboard-relay.exe")
+  }, { integrityMode: "warn" });
+  await waitForRelay();
+  try {
+    const healthResponse = await request("GET", "/health");
+    assert("warn success health returns 200", healthResponse.status === 200, `got ${healthResponse.status}`);
+    assert("warn success reports verified", healthResponse.body?.integrity?.status === "verified", JSON.stringify(healthResponse.body?.integrity));
+    assert("warn success keeps readOnly=false", healthResponse.body?.integrity?.readOnly === false, JSON.stringify(healthResponse.body?.integrity));
+
+    const registerResponse = await request("POST", "/player/register", { handle: "warnok01" });
+    assert("warn success allows mutating routes", registerResponse.status === 200, `got ${registerResponse.status}`);
+  } finally {
+    stopRelay();
+  }
+
+  section("integrity mode - strict failure blocks startup");
+  await startRelay({}, { integrityMode: "strict" });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const strictProbe = await new Promise((resolve) => {
+    const req = http.request({
+      hostname: "127.0.0.1",
+      port: TEST_PORT,
+      path: "/api/health",
+      method: "GET"
+    }, (res) => resolve({ status: res.statusCode }));
+    req.on("error", (error) => resolve({ status: -1, error: error.code || error.message }));
+    req.end();
+  });
+  assert("strict failure keeps relay unavailable", strictProbe.status === -1, JSON.stringify(strictProbe));
+  stopRelay();
+
   section("CORS preflight OPTIONS");
   await withRelay({}, async () => {
     const res = await request("OPTIONS", "/health");
@@ -378,8 +494,16 @@ async function runTests() {
     "p/p11": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p11", recordName: "g/voidrunner3d/p11/record" }),
     "g/voidrunner3d/p11/record": createRecordValue("p11", { easy: { score: 8, updatedAt: 111 } }),
     "g/voidrunner3d/badjson/record": "{broken json}",
-    "g/voidrunner3d/mismatch/record": JSON.stringify({ handle: "other", scores: { easy: { score: 999, updatedAt: 999 } } }),
-    "g/voidrunner3d/missing-score/record": JSON.stringify({ handle: "missing-score", scores: { easy: { updatedAt: 500 } } }),
+    "g/voidrunner3d/mismatch/record": createRecordValue("other", { easy: { score: 999, updatedAt: 999 } }),
+    "g/voidrunner3d/missing-score/record": createRecordValue("missing-score", { easy: { updatedAt: 500 } }),
+    "g/voidrunner3d/tampered/record": (() => {
+      const encodedRecord = JSON.parse(createRecordValue("tampered", { easy: { score: 4, updatedAt: 112 } }));
+      encodedRecord.payload = Buffer.from(JSON.stringify({
+        handle: "tampered",
+        scores: { easy: { score: 999, updatedAt: 112 } }
+      }), "utf8").toString("base64");
+      return JSON.stringify(encodedRecord);
+    })(),
     "g/voidrunner3d/not-a-record/profile": createRecordValue("not-a-record", { easy: { score: 777, updatedAt: 777 } })
   }, async () => {
     const leaderboardResponse = await request("GET", "/leaderboard?difficulty=easy");
@@ -390,7 +514,296 @@ async function runTests() {
     assert("leaderboard ignores removed shared snapshot names", !leaderboardResponse.body?.entries?.some((entry) => entry.name === "OLD"), JSON.stringify(leaderboardResponse.body?.entries));
     assert("leaderboard rank 1 is the highest scanned player score", leaderboardResponse.body?.entries?.[0]?.handle === "p06", JSON.stringify(leaderboardResponse.body?.entries));
     assert("leaderboard rank 10 keeps the lowest surviving top-10 score", leaderboardResponse.body?.entries?.[9]?.score === 8, JSON.stringify(leaderboardResponse.body?.entries?.[9]));
-    assert("leaderboard safely ignores malformed or incomplete scanned records", !leaderboardResponse.body?.entries?.some((entry) => entry.handle === "badjson" || entry.handle === "mismatch" || entry.handle === "missing-score"), JSON.stringify(leaderboardResponse.body?.entries));
+    assert("leaderboard safely ignores malformed or incomplete scanned records", !leaderboardResponse.body?.entries?.some((entry) => entry.handle === "badjson" || entry.handle === "mismatch" || entry.handle === "missing-score" || entry.handle === "tampered"), JSON.stringify(leaderboardResponse.body?.entries));
+  });
+
+  section("GET /api/leaderboard/rank - featured normal rank context MVP");
+  await withRelay({
+    "p/p00": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p00", recordName: "g/voidrunner3d/p00/record" }),
+    "g/voidrunner3d/p00/record": createRecordValue("p00", { normal: { score: 40, updatedAt: 100 } }),
+    "p/p01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p01", recordName: "g/voidrunner3d/p01/record" }),
+    "g/voidrunner3d/p01/record": createRecordValue("p01", { normal: { score: 35, updatedAt: 101 } }),
+    "p/p02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p02", recordName: "g/voidrunner3d/p02/record" }),
+    "g/voidrunner3d/p02/record": createRecordValue("p02", { normal: { score: 30, updatedAt: 102 } }),
+    "p/p03": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p03", recordName: "g/voidrunner3d/p03/record" }),
+    "g/voidrunner3d/p03/record": createRecordValue("p03", { normal: { score: 25, updatedAt: 103 } }),
+    "p/p04": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p04", recordName: "g/voidrunner3d/p04/record" }),
+    "g/voidrunner3d/p04/record": createRecordValue("p04", { normal: { score: 20, updatedAt: 104 } }),
+    "p/p05": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p05", recordName: "g/voidrunner3d/p05/record" }),
+    "g/voidrunner3d/p05/record": createRecordValue("p05", { normal: { score: 19, updatedAt: 105 } }),
+    "p/p06": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p06", recordName: "g/voidrunner3d/p06/record" }),
+    "g/voidrunner3d/p06/record": createRecordValue("p06", { normal: { score: 18, updatedAt: 106 } }),
+    "p/p07": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p07", recordName: "g/voidrunner3d/p07/record" }),
+    "g/voidrunner3d/p07/record": createRecordValue("p07", { normal: { score: 17, updatedAt: 107 } }),
+    "p/p08": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p08", recordName: "g/voidrunner3d/p08/record" }),
+    "g/voidrunner3d/p08/record": createRecordValue("p08", { normal: { score: 16, updatedAt: 108 } }),
+    "p/p09": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p09", recordName: "g/voidrunner3d/p09/record" }),
+    "g/voidrunner3d/p09/record": createRecordValue("p09", { normal: { score: 15, updatedAt: 109 } }),
+    "p/p10": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p10", recordName: "g/voidrunner3d/p10/record" }),
+    "g/voidrunner3d/p10/record": createRecordValue("p10", { normal: { score: 14, updatedAt: 110 } }),
+    "p/pilot01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "pilot01", recordName: "g/voidrunner3d/pilot01/record" }),
+    "g/voidrunner3d/pilot01/record": createRecordValue("pilot01", { normal: { score: 10, updatedAt: 111 } })
+  }, async () => {
+    const invalidHandleResponse = await request("GET", "/leaderboard/rank?handle=!!");
+    assert("invalid rank handle returns 400", invalidHandleResponse.status === 400, `got ${invalidHandleResponse.status}`);
+
+    const rankedResponse = await request("GET", "/leaderboard/rank?handle=p01");
+    assert("rank endpoint returns 200 for ranked handle", rankedResponse.status === 200, `got ${rankedResponse.status}`);
+    assert("rank endpoint uses normal as featured difficulty", rankedResponse.body?.featuredDifficulty === "normal", JSON.stringify(rankedResponse.body));
+    assert("rank endpoint returns ranked player position", rankedResponse.body?.player?.rank === 2, JSON.stringify(rankedResponse.body?.player));
+    assert("rank endpoint returns delta to next rank", rankedResponse.body?.deltas?.toNextRank === 5, JSON.stringify(rankedResponse.body?.deltas));
+    assert("rank endpoint returns leader target", rankedResponse.body?.targets?.leader?.handle === "p00", JSON.stringify(rankedResponse.body?.targets));
+    assert("rank endpoint returns compact top list of 10", rankedResponse.body?.top?.length === 10, JSON.stringify(rankedResponse.body?.top));
+
+    const outsideTopResponse = await request("GET", "/leaderboard/rank?handle=pilot01");
+    assert("outside-top player still receives global rank", outsideTopResponse.body?.player?.rank === 12, JSON.stringify(outsideTopResponse.body?.player));
+    assert("outside-top player is flagged as not in top list", outsideTopResponse.body?.player?.inTopList === false, JSON.stringify(outsideTopResponse.body?.player));
+    assert("outside-top player gets delta to enter top list", outsideTopResponse.body?.deltas?.toTopList === 5, JSON.stringify(outsideTopResponse.body?.deltas));
+  });
+
+  section("GET /api/leaderboard/rank - empty and unranked behavior MVP");
+  await withRelay({}, async () => {
+    const emptyRankResponse = await request("GET", "/leaderboard/rank?handle=ghost01");
+    assert("empty rank request returns 200", emptyRankResponse.status === 200, `got ${emptyRankResponse.status}`);
+    assert("empty rank response returns empty top list", Array.isArray(emptyRankResponse.body?.top) && emptyRankResponse.body.top.length === 0, JSON.stringify(emptyRankResponse.body));
+    assert("empty rank response sets player rank null", emptyRankResponse.body?.player?.rank === null, JSON.stringify(emptyRankResponse.body?.player));
+    assert("empty rank response sets player score null", emptyRankResponse.body?.player?.score === null, JSON.stringify(emptyRankResponse.body?.player));
+    assert("empty rank response keeps delta values null", emptyRankResponse.body?.deltas?.toLeader === null && emptyRankResponse.body?.deltas?.toNextRank === null && emptyRankResponse.body?.deltas?.toTopList === null, JSON.stringify(emptyRankResponse.body?.deltas));
+  });
+
+  section("POST /api/prizes and GET /api/prizes/latest - MVP prize history");
+  await withRelay({}, async () => {
+    const invalidTypeResponse = await request("GET", "/prizes/latest?type=monthly");
+    assert("invalid prize type returns 400", invalidTypeResponse.status === 400, `got ${invalidTypeResponse.status}`);
+
+    const missingPrizeResponse = await request("GET", "/prizes/latest?type=hourly");
+    assert("missing latest prize returns 404", missingPrizeResponse.status === 404, `got ${missingPrizeResponse.status}`);
+    assert("missing latest prize reports scan fallback strategy", missingPrizeResponse.body?.strategy === "scan-max-index", JSON.stringify(missingPrizeResponse.body));
+
+    const invalidPrizePayloadResponse = await request("POST", "/prizes", {
+      version: 1,
+      type: "hourly",
+      index: 0,
+      winner: "pilot01",
+      score: 10,
+      difficulty: "easy",
+      blockStart: 1,
+      blockEnd: 2,
+      paid: true,
+      timestamp: 1000
+    });
+    assert("invalid paid prize payload without txid returns 400", invalidPrizePayloadResponse.status === 400, `got ${invalidPrizePayloadResponse.status}`);
+
+    const writeFirstPrizeResponse = await request("POST", "/prizes", {
+      version: 1,
+      type: "hourly",
+      index: 0,
+      winner: "Pilot01",
+      score: 20.5,
+      difficulty: "normal",
+      blockStart: 100,
+      blockEnd: 110,
+      paid: false,
+      txid: null,
+      paidAtHeight: null,
+      timestamp: 1710000000000
+    });
+    assert("valid prize write returns 200", writeFirstPrizeResponse.status === 200, `got ${writeFirstPrizeResponse.status}`);
+    assert("prize write returns write strategy", writeFirstPrizeResponse.body?.strategy === "write-record-and-pointer", JSON.stringify(writeFirstPrizeResponse.body));
+    assert("prize write normalizes winner handle", writeFirstPrizeResponse.body?.prize?.winner === "pilot01", JSON.stringify(writeFirstPrizeResponse.body?.prize));
+
+    const readLatestAfterFirstWriteResponse = await request("GET", "/prizes/latest?type=hourly");
+    assert("latest prize read after first write returns 200", readLatestAfterFirstWriteResponse.status === 200, `got ${readLatestAfterFirstWriteResponse.status}`);
+    assert("latest prize read uses pointer strategy", readLatestAfterFirstWriteResponse.body?.strategy === "pointer", JSON.stringify(readLatestAfterFirstWriteResponse.body));
+    assert("latest prize index is 0", readLatestAfterFirstWriteResponse.body?.prize?.index === 0, JSON.stringify(readLatestAfterFirstWriteResponse.body?.prize));
+
+    const writeSecondPrizeResponse = await request("POST", "/prizes", {
+      version: 1,
+      type: "hourly",
+      index: 1,
+      winner: "pilot02",
+      score: 30,
+      difficulty: "hard",
+      blockStart: 111,
+      blockEnd: 120,
+      paid: true,
+      txid: "tx-123",
+      paidAtHeight: 121,
+      timestamp: 1710000010000
+    });
+    assert("second prize write returns 200", writeSecondPrizeResponse.status === 200, `got ${writeSecondPrizeResponse.status}`);
+
+    const readLatestAfterSecondWriteResponse = await request("GET", "/prizes/latest?type=hourly");
+    assert("latest prize index follows latest pointer update", readLatestAfterSecondWriteResponse.body?.prize?.index === 1, JSON.stringify(readLatestAfterSecondWriteResponse.body?.prize));
+    assert("latest prize returns paid txid", readLatestAfterSecondWriteResponse.body?.prize?.txid === "tx-123", JSON.stringify(readLatestAfterSecondWriteResponse.body?.prize));
+  });
+
+  section("GET /api/prize-window/status - block countdown MVP");
+  await withRelay({}, async () => {
+    const invalidPrizeTypeResponse = await request("GET", "/prize-window/status?type=monthly");
+    assert("invalid prize window type returns 400", invalidPrizeTypeResponse.status === 400, `got ${invalidPrizeTypeResponse.status}`);
+    assert("invalid prize window type returns explicit error", invalidPrizeTypeResponse.body?.error === "Invalid prize type", JSON.stringify(invalidPrizeTypeResponse.body));
+
+    const hourlyStatusResponse = await request("GET", "/prize-window/status?type=hourly");
+    assert("hourly prize window status returns 200", hourlyStatusResponse.status === 200, `got ${hourlyStatusResponse.status}`);
+    assert("hourly status echoes type", hourlyStatusResponse.body?.type === "hourly", JSON.stringify(hourlyStatusResponse.body));
+    assert("hourly status includes mocked current block height", hourlyStatusResponse.body?.currentBlockHeight === 12345, JSON.stringify(hourlyStatusResponse.body));
+    assert("hourly status window index is derived from block height", hourlyStatusResponse.body?.currentWindowIndex === 102, JSON.stringify(hourlyStatusResponse.body));
+    assert("hourly status window size is 120", hourlyStatusResponse.body?.windowSize === 120, JSON.stringify(hourlyStatusResponse.body));
+    assert("hourly status blocksRemaining is 14", hourlyStatusResponse.body?.blocksRemaining === 14, JSON.stringify(hourlyStatusResponse.body));
+    assert("hourly status percentComplete is rounded to 3 decimals", hourlyStatusResponse.body?.percentComplete === 88.333, JSON.stringify(hourlyStatusResponse.body));
+  });
+
+  section("GET /api/pot/status - MVP funding address balance visibility");
+  await withRelay({
+    __potBalance: 1.25
+  }, async () => {
+    const fundedResponse = await request("GET", "/pot/status");
+    assert("pot status returns 200", fundedResponse.status === 200, `got ${fundedResponse.status}`);
+    assert("pot status includes fixed funding address", fundedResponse.body?.address === "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29", JSON.stringify(fundedResponse.body));
+    assert("pot status returns configured balance", fundedResponse.body?.balance === 1.25, JSON.stringify(fundedResponse.body));
+    assert("pot status is FULLY_FUNDED when balance >= 1", fundedResponse.body?.status === "FULLY_FUNDED", JSON.stringify(fundedResponse.body));
+    assert("pot status reports zero missing amount when fully funded", fundedResponse.body?.missingToTarget === 0, JSON.stringify(fundedResponse.body));
+  });
+
+  await withRelay({
+    __potBalance: 0.4
+  }, async () => {
+    const lowResponse = await request("GET", "/pot/status");
+    assert("pot status is LOW when balance is between 0 and 1", lowResponse.body?.status === "LOW", JSON.stringify(lowResponse.body));
+    assert("pot status exposes missing amount to full funding threshold", lowResponse.body?.missingToTarget === 0.6, JSON.stringify(lowResponse.body));
+  });
+
+  await withRelay({
+    __potBalance: 0
+  }, async () => {
+    const unfundedResponse = await request("GET", "/pot/status");
+    assert("pot status is UNFUNDED when balance is 0", unfundedResponse.body?.status === "UNFUNDED", JSON.stringify(unfundedResponse.body));
+  });
+
+  await withRelay({
+    __potBalanceRaw: "NaN"
+  }, async () => {
+    const invalidBalanceResponse = await request("GET", "/pot/status");
+    assert("invalid RPC pot balance keeps endpoint online", invalidBalanceResponse.status === 200, `got ${invalidBalanceResponse.status}`);
+    assert("invalid RPC pot balance still exposes funding address", invalidBalanceResponse.body?.address === "RH6CVe24Zf9HqUq6AktYeBLhVeuHBjzL29", JSON.stringify(invalidBalanceResponse.body));
+    assert("invalid RPC pot balance marks status UNKNOWN", invalidBalanceResponse.body?.status === "UNKNOWN", JSON.stringify(invalidBalanceResponse.body));
+    assert("invalid RPC pot balance marks rpcAvailable false", invalidBalanceResponse.body?.rpcAvailable === false, JSON.stringify(invalidBalanceResponse.body));
+    assert("invalid RPC pot balance returns warning message", invalidBalanceResponse.body?.warning === "Invalid pot balance returned by RPC", JSON.stringify(invalidBalanceResponse.body));
+  });
+
+  section("GET /api/prizes/latest - scan fallback when latest pointer is stale");
+  await withRelay({
+    "g/voidrunner3d/prizes/daily/latest": JSON.stringify({ index: 99, updatedAt: 1710001000000 }),
+    "g/voidrunner3d/prizes/daily/3": JSON.stringify({
+      version: 1,
+      type: "daily",
+      index: 3,
+      winner: "pilot03",
+      score: 41,
+      difficulty: "easy",
+      blockStart: 200,
+      blockEnd: 220,
+      paid: false,
+      txid: null,
+      paidAtHeight: null,
+      timestamp: 1710000100000
+    }),
+    "g/voidrunner3d/prizes/daily/4": JSON.stringify({
+      version: 1,
+      type: "daily",
+      index: 4,
+      winner: "pilot04",
+      score: 51,
+      difficulty: "normal",
+      blockStart: 221,
+      blockEnd: 240,
+      paid: true,
+      txid: "tx-456",
+      paidAtHeight: 241,
+      timestamp: 1710000200000
+    })
+  }, async () => {
+    const fallbackReadResponse = await request("GET", "/prizes/latest?type=daily");
+    assert("scan fallback read returns 200", fallbackReadResponse.status === 200, `got ${fallbackReadResponse.status}`);
+    assert("scan fallback strategy is explicit", fallbackReadResponse.body?.strategy === "scan-max-index", JSON.stringify(fallbackReadResponse.body));
+    assert("scan fallback chooses highest prize index", fallbackReadResponse.body?.prize?.index === 4, JSON.stringify(fallbackReadResponse.body?.prize));
+  });
+
+  section("POST /api/prizes/close-window - MVP manual payout");
+  await withRelay({
+    "p/alpha": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "alpha", recordName: "g/voidrunner3d/alpha/record" }),
+    "g/voidrunner3d/alpha/record": createRecordValue("alpha", {
+      normal: { score: 22, updatedAt: 1001 }
+    }),
+    "p/bravo": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "bravo", recordName: "g/voidrunner3d/bravo/record" }),
+    "g/voidrunner3d/bravo/record": createRecordValue("bravo", {
+      normal: { score: 30, updatedAt: 1002 }
+    })
+  }, async () => {
+    const missingAdminKeyResponse = await request("POST", "/prizes/close-window", {
+      type: "hourly",
+      difficulty: "normal",
+      blockStart: 100,
+      blockEnd: 110
+    });
+    assert("close-window without admin key returns 403", missingAdminKeyResponse.status === 403, `got ${missingAdminKeyResponse.status}`);
+
+    const invalidPayloadResponse = await request("POST", "/prizes/close-window", {
+      adminKey: "voidrunner3d-mvp-admin",
+      type: "monthly",
+      difficulty: "normal",
+      blockStart: 100,
+      blockEnd: 110
+    });
+    assert("close-window with invalid type returns 400", invalidPayloadResponse.status === 400, `got ${invalidPayloadResponse.status}`);
+
+    const closeWindowResponse = await request("POST", "/prizes/close-window", {
+      adminKey: "voidrunner3d-mvp-admin",
+      type: "hourly",
+      difficulty: "normal",
+      blockStart: 100,
+      blockEnd: 110,
+      payoutAmount: 0.015
+    });
+
+    assert("close-window success returns 200", closeWindowResponse.status === 200, `got ${closeWindowResponse.status}`);
+    assert("close-window marks payout as paid", closeWindowResponse.body?.payout?.paid === true, JSON.stringify(closeWindowResponse.body));
+    assert("close-window winner is top leaderboard handle", closeWindowResponse.body?.prize?.winner === "bravo", JSON.stringify(closeWindowResponse.body?.prize));
+    assert("close-window stores txid from sendtoname", closeWindowResponse.body?.prize?.txid === "txid-bravo", JSON.stringify(closeWindowResponse.body?.prize));
+
+    const latestPrizeResponse = await request("GET", "/prizes/latest?type=hourly");
+    assert("latest prize after close-window returns 200", latestPrizeResponse.status === 200, `got ${latestPrizeResponse.status}`);
+    assert("latest prize reflects successful payout", latestPrizeResponse.body?.prize?.paid === true && latestPrizeResponse.body?.prize?.txid === "txid-bravo", JSON.stringify(latestPrizeResponse.body?.prize));
+  });
+
+  section("POST /api/prizes/close-window - payout failure still writes failed prize record");
+  await withRelay({
+    "p/payoutfail": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "payoutfail", recordName: "g/voidrunner3d/payoutfail/record" }),
+    "g/voidrunner3d/payoutfail/record": createRecordValue("payoutfail", {
+      hard: { score: 77, updatedAt: 2001 }
+    }),
+    "p/runnerup": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "runnerup", recordName: "g/voidrunner3d/runnerup/record" }),
+    "g/voidrunner3d/runnerup/record": createRecordValue("runnerup", {
+      hard: { score: 70, updatedAt: 2000 }
+    })
+  }, async () => {
+    const closeWindowResponse = await request("POST", "/prizes/close-window", {
+      adminKey: "voidrunner3d-mvp-admin",
+      type: "daily",
+      difficulty: "hard",
+      blockStart: 300,
+      blockEnd: 320
+    });
+
+    assert("close-window with payout failure still returns 200", closeWindowResponse.status === 200, `got ${closeWindowResponse.status}`);
+    assert("failed payout prize has paid=false", closeWindowResponse.body?.prize?.paid === false, JSON.stringify(closeWindowResponse.body?.prize));
+    assert("failed payout prize stores txid=null", closeWindowResponse.body?.prize?.txid === null, JSON.stringify(closeWindowResponse.body?.prize));
+    assert("failed payout response includes payout error", typeof closeWindowResponse.body?.payout?.error === "string", JSON.stringify(closeWindowResponse.body?.payout));
+
+    const latestPrizeResponse = await request("GET", "/prizes/latest?type=daily");
+    assert("latest daily prize is written after payout failure", latestPrizeResponse.status === 200, `got ${latestPrizeResponse.status}`);
+    assert("latest daily prize keeps failed payout fields", latestPrizeResponse.body?.prize?.paid === false && latestPrizeResponse.body?.prize?.txid === null, JSON.stringify(latestPrizeResponse.body?.prize));
   });
 
   section("404 for unknown routes");
