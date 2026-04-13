@@ -1,3 +1,14 @@
+# Changelog — 2026-04-13
+
+## [High] Admin relay governs prize writes and telemetry
+- Added `admin-relay.js` to isolate prize window, pot, and sendtoname controls behind `ADMIN=true`, `PRIZE_POT_ADDRESS`, and a dedicated admin port while keeping the public relay read-only for those routes.
+- Documented the new public `GET /api/prizes/latest` endpoint along with on-chain storage at `g/voidrunner3d/prizes/{type}/{index}`, so prize metadata and featured winners stay discoverable without exposing sensitive writes.
+- Reinforced the release cadence by linking the README, changelog, and memory bank guidance to the new admin workflow and reward validation telemetry.
+
+## [High] Validation workflow and documentation refresh
+- Introduced `npm run validate:mvp` to run `relay.test.js`, `relay-http.test.js`, `admin-relay.test.js`, and `game.test.js` in a single guardrail, ensuring both relay and client suites stay synced with the MVP behavior.
+- Updated README operations, installation, and usage guidance to highlight the admin relay, prize workflows, and the new validation script so operators and QA teams know where to look for telemetry and controls.
+
 # Changelog — 2026-04-12
 
 ## [High] Focus-loss timer anti-cheat fix
