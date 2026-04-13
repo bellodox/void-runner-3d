@@ -304,19 +304,31 @@ async function runTests() {
     assert("stored high score remains persisted in localStorage", storedValue === "999", `stored="${storedValue}"`);
   }
 
-  // ---- Player initials sanitization ----
-  section("Player initials sanitization");
+  // ---- Player handle UX ----
+  section("Player handle UX");
   {
+    await page.evaluate(() => {
+      const gameOverElement = document.getElementById("gameOverOverlay");
+      if (gameOverElement) gameOverElement.classList.remove("hidden");
+      localStorage.removeItem("voidrunner_player_handle");
+      const inputElement = document.getElementById("playerInitialsInput");
+      if (inputElement) {
+        inputElement.disabled = false;
+        inputElement.value = "";
+      }
+    });
+
+    const initialHandleValue = await page.$eval("#playerInitialsInput", (element) => element.value);
+    assert("new-user handle starts empty instead of a seeded default", initialHandleValue === "", `value="${initialHandleValue}"`);
+
     const sanitizedValue = await page.evaluate(() => {
       const inputElement = document.getElementById("playerInitialsInput");
       if (!inputElement) return null;
-      if (inputElement.disabled) return "__LOCKED__";
       inputElement.value = "a!b@c#123";
       inputElement.dispatchEvent(new Event("input", { bubbles: true }));
       return inputElement.value;
     });
-    const isSanitizedOrLocked = sanitizedValue === "abc123" || sanitizedValue === "__LOCKED__" || sanitizedValue === "pilot01";
-    assert("initials input sanitizes when editable, or remains locked for registered handles", isSanitizedOrLocked, `value="${sanitizedValue}"`);
+    assert("handle input sanitizes editable values", sanitizedValue === "abc123", `value="${sanitizedValue}"`);
   }
 
   // ---- formatTime edge cases via HUD ----

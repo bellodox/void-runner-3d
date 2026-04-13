@@ -354,7 +354,7 @@
       <p id="finalScoreText" class="subtitle">Final Time: 00:00.000</p>
       <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
       <div class="chain-submit">
-        <input id="playerInitialsInput" class="initials-input" type="text" maxlength="24" value="pilot01" autocomplete="off" spellcheck="false" />
+        <input id="playerInitialsInput" class="initials-input" type="text" maxlength="24" value="" placeholder="choose handle" autocomplete="off" spellcheck="false" />
         <button id="registerChainPlayerBtn" class="action-btn">Register</button>
         <button id="submitChainScoreBtn" class="action-btn">Submit to Chain</button>
       </div>
@@ -882,9 +882,19 @@
       }
 
       function readStoredHandle() {
-        const storedValue = localStorage.getItem(PLAYER_HANDLE_STORAGE_KEY) || "pilot01";
+        const storedValue = localStorage.getItem(PLAYER_HANDLE_STORAGE_KEY) || "";
         const handle = sanitizeHandle(storedValue);
-        return handle || "pilot01";
+        return handle || "";
+      }
+
+      function clearRegisteredPlayerState() {
+        registeredPlayerHandle = "";
+        lockedHandle = "";
+        registeredPlayerScores = {
+          easy: null,
+          normal: null,
+          hard: null
+        };
       }
 
       function setChainStatus(text, color) {
@@ -905,6 +915,18 @@
         submitChainScoreBtn.style.display = shouldShowSubmit ? "inline-block" : "none";
         submitChainScoreBtn.disabled = !shouldShowSubmit || !hasValidScore || !hasNewRecord;
 
+        console.debug("[chain-ui] updateSubmitButtonState", {
+          selectedDifficulty,
+          lastFinalScore,
+          registeredPlayerHandle,
+          existingDifficultyRecord,
+          hasValidScore,
+          hasNewRecord,
+          shouldShowSubmit,
+          disabled: submitChainScoreBtn.disabled,
+          buttonText: submitChainScoreBtn.textContent
+        });
+
         if (!hasValidScore) {
           submitChainScoreBtn.textContent = "No Score";
         } else if (!hasNewRecord) {
@@ -915,20 +937,30 @@
       }
 
       function applyPlayerStatus(player) {
-        registeredPlayerHandle = player && player.canSubmit ? player.handle : "";
-        registeredPlayerScores = player && player.scores && typeof player.scores === "object"
-          ? {
-              easy: player.scores.easy || null,
-              normal: player.scores.normal || null,
-              hard: player.scores.hard || null
-            }
-          : {
-              easy: null,
-              normal: null,
-              hard: null
-            };
+        const handleFromInput = sanitizeHandle(playerInitialsInput.value);
+        const canSubmit = Boolean(player && player.canSubmit);
+        const isCurrentHandle = canSubmit && player.handle === handleFromInput;
 
-        if (registeredPlayerHandle) {
+        console.debug("[chain-ui] applyPlayerStatus", {
+          inputHandle: playerInitialsInput.value,
+          handleFromInput,
+          player,
+          lockedHandleBefore: lockedHandle
+        });
+
+        if (isCurrentHandle) {
+          registeredPlayerHandle = player.handle;
+          registeredPlayerScores = player.scores && typeof player.scores === "object"
+            ? {
+                easy: player.scores.easy || null,
+                normal: player.scores.normal || null,
+                hard: player.scores.hard || null
+              }
+            : {
+                easy: null,
+                normal: null,
+                hard: null
+              };
           lockedHandle = registeredPlayerHandle;
           playerInitialsInput.value = registeredPlayerHandle;
           playerInitialsInput.disabled = true;
@@ -938,6 +970,7 @@
           const lockIndicator = document.getElementById("handleLockIndicator");
           if (lockIndicator) lockIndicator.style.display = "block";
         } else {
+          clearRegisteredPlayerState();
           playerInitialsInput.disabled = false;
           playerInitialsInput.title = "";
           registerChainPlayerBtn.style.display = "inline-block";
@@ -945,6 +978,17 @@
           const lockIndicator = document.getElementById("handleLockIndicator");
           if (lockIndicator) lockIndicator.style.display = "none";
         }
+
+        console.debug("[chain-ui] applyPlayerStatus.result", {
+          registeredPlayerHandle,
+          lockedHandle,
+          inputValue: playerInitialsInput.value,
+          inputDisabled: playerInitialsInput.disabled,
+          registerVisible: registerChainPlayerBtn.style.display,
+          submitVisible: submitChainScoreBtn.style.display,
+          isCurrentHandle
+        });
+
         updateSubmitButtonState();
       }
 
@@ -988,8 +1032,16 @@
       async function refreshPlayerStatus() {
         const handle = sanitizeHandle(playerInitialsInput.value);
         if (!handle) {
-          applyPlayerStatus(null);
-          setSubmitStatus("enter handle (a-z, 0-9, _, -)", "#ffb0b0");
+          clearRegisteredPlayerState();
+          playerInitialsInput.value = "";
+          playerInitialsInput.disabled = false;
+          playerInitialsInput.title = "";
+          registerChainPlayerBtn.style.display = "inline-block";
+          submitChainScoreBtn.style.display = "none";
+          const lockIndicator = document.getElementById("handleLockIndicator");
+          if (lockIndicator) lockIndicator.style.display = "none";
+          updateSubmitButtonState();
+          setSubmitStatus("enter handle (3-24 chars: a-z, 0-9, _, -)", "#ffb0b0");
           return;
         }
 
@@ -1000,13 +1052,20 @@
           const player = payload && payload.player ? payload.player : null;
           applyPlayerStatus(player);
 
-          if (player && player.canSubmit) {
-            setSubmitStatus(`registered as p/${handle}`, "#65f5a8");
+          if (player && player.canSubmit && player.handle === handle) {
+            setSubmitStatus(`registered as p/${player.handle}`, "#65f5a8");
           } else {
-            setSubmitStatus("not registered, use Register first", "#ffb0b0");
+            setSubmitStatus(`handle ${handle} is available - use Register`, "#a6c6dd");
           }
         } catch {
-          applyPlayerStatus(null);
+          clearRegisteredPlayerState();
+          playerInitialsInput.disabled = false;
+          playerInitialsInput.title = "";
+          registerChainPlayerBtn.style.display = "inline-block";
+          submitChainScoreBtn.style.display = "none";
+          const lockIndicator = document.getElementById("handleLockIndicator");
+          if (lockIndicator) lockIndicator.style.display = "none";
+          updateSubmitButtonState();
           setSubmitStatus("relay offline (status check failed)", "#ffb0b0");
         }
       }
@@ -1027,7 +1086,7 @@
         }
 
         registerChainPlayerBtn.disabled = true;
-        setSubmitStatus("registering player...", "#a6c6dd");
+        setSubmitStatus(`registering p/${handle}...`, "#a6c6dd");
 
         try {
           const response = await fetch(`${RELAY_BASE_URL}/player/register`, {
@@ -1036,15 +1095,36 @@
             body: JSON.stringify({ handle })
           });
 
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const payload = await response.json();
+          const payload = await response.json().catch(() => null);
           const player = payload && payload.player ? payload.player : null;
+
+          if (response.status === 409) {
+            clearRegisteredPlayerState();
+            playerInitialsInput.disabled = false;
+            playerInitialsInput.title = "";
+            registerChainPlayerBtn.style.display = "inline-block";
+            submitChainScoreBtn.style.display = "none";
+            const lockIndicator = document.getElementById("handleLockIndicator");
+            if (lockIndicator) lockIndicator.style.display = "none";
+            updateSubmitButtonState();
+            setSubmitStatus(`handle ${handle} is already taken - choose another`, "#ffb0b0");
+            return;
+          }
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
           localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
           applyPlayerStatus(player);
-          setSubmitStatus(`registered as p/${handle}`, "#65f5a8");
+          setSubmitStatus(`registered as p/${player?.handle || handle}`, "#65f5a8");
         } catch {
-          applyPlayerStatus(null);
+          clearRegisteredPlayerState();
+          playerInitialsInput.disabled = false;
+          playerInitialsInput.title = "";
+          registerChainPlayerBtn.style.display = "inline-block";
+          submitChainScoreBtn.style.display = "none";
+          const lockIndicator = document.getElementById("handleLockIndicator");
+          if (lockIndicator) lockIndicator.style.display = "none";
+          updateSubmitButtonState();
           setSubmitStatus("registration failed (relay or node unavailable)", "#ffb0b0");
         } finally {
           registerChainPlayerBtn.disabled = false;
@@ -1653,10 +1733,8 @@
         finalScoreText.textContent = `Final Time: ${formatTime(survivalTime)}`;
         recordText.textContent = `${isNewRecord ? "NEW LOCAL RECORD! " : "Local Best Time: "}${formatTime(highScore)}`;
         recordText.style.color = isNewRecord ? "#8cffbf" : "#a6c6dd";
-        playerInitialsInput.value = readStoredHandle();
-        if (lockedHandle) {
-          playerInitialsInput.value = lockedHandle;
-        }
+        const storedHandle = readStoredHandle();
+        playerInitialsInput.value = lockedHandle || storedHandle || "";
         setSubmitStatus("checking registration...", "#a6c6dd");
         gameOverOverlay.classList.remove("hidden");
         registerChainPlayerBtn.style.display = "inline-block";
@@ -1769,7 +1847,11 @@
         playerInitialsInput.addEventListener("input", () => {
           playerInitialsInput.value = sanitizeHandle(playerInitialsInput.value);
           if (!lockedHandle) {
-            registeredPlayerHandle = "";
+            clearRegisteredPlayerState();
+            registerChainPlayerBtn.style.display = "inline-block";
+            submitChainScoreBtn.style.display = "none";
+            const lockIndicator = document.getElementById("handleLockIndicator");
+            if (lockIndicator) lockIndicator.style.display = "none";
             updateSubmitButtonState();
           } else {
             playerInitialsInput.value = lockedHandle;
@@ -1777,7 +1859,13 @@
         });
 
         playerInitialsInput.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") registerPlayerForChain();
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          if (lockedHandle && submitChainScoreBtn.style.display !== "none" && !submitChainScoreBtn.disabled) {
+            submitScoreToChain();
+            return;
+          }
+          registerPlayerForChain();
         });
 
         pauseBtn.addEventListener("click", () => {

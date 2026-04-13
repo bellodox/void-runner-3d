@@ -259,6 +259,7 @@ async function runTests() {
     assert("unregistered handle reports recordRegistered false", unregisteredStatusResponse.body?.player?.recordRegistered === false, JSON.stringify(unregisteredStatusResponse.body));
     assert("unregistered handle cannot submit", unregisteredStatusResponse.body?.player?.canSubmit === false, JSON.stringify(unregisteredStatusResponse.body));
     assert("unregistered handle still returns derived record name", unregisteredStatusResponse.body?.player?.recordName === "g/voidrunner3d/ghost01/record", JSON.stringify(unregisteredStatusResponse.body));
+    assert("unregistered handle keeps requested handle in response", unregisteredStatusResponse.body?.player?.handle === "ghost01", JSON.stringify(unregisteredStatusResponse.body));
 
     const registeredStatusResponse = await request("GET", "/player/status?handle=pilot02");
     assert("registered handle status returns 200", registeredStatusResponse.status === 200, `got ${registeredStatusResponse.status}`);
