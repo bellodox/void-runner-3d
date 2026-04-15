@@ -130,6 +130,28 @@ function normalizeChainHash(rawValue) {
   return /^[a-f0-9]{64}$/.test(normalizedHash) ? normalizedHash : null;
 }
 
+function parseChainHashValue(rawValue) {
+  const directHash = normalizeChainHash(rawValue);
+  if (directHash) {
+    return directHash;
+  }
+  if (typeof rawValue !== "string") {
+    return null;
+  }
+  try {
+    const parsedValue = JSON.parse(rawValue);
+    if (typeof parsedValue === "string") {
+      return normalizeChainHash(parsedValue);
+    }
+    if (parsedValue && typeof parsedValue === "object" && typeof parsedValue.hash === "string") {
+      return normalizeChainHash(parsedValue.hash);
+    }
+  } catch (error) {
+    return null;
+  }
+  return null;
+}
+
 function computeFileHash(fileName) {
   const filePath = path.join(__dirname, fileName);
   const fileBuffer = fs.readFileSync(filePath);
@@ -139,7 +161,7 @@ function computeFileHash(fileName) {
 async function readExpectedHashFromChain(name) {
   const nameState = await readName(name);
   if (!nameState.exists) return null;
-  return normalizeChainHash(nameState.value);
+  return parseChainHashValue(nameState.value);
 }
 
 function buildIntegrityStatusPayload() {
