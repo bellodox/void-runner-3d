@@ -333,30 +333,6 @@ function sanitizeNonNegativeInteger(rawValue) {
   return parsedValue;
 }
 
-function getCurrentRoundName() {
-  return `${RELEASE_PREFIX}current/round`;
-}
-
-function getCurrentLegName() {
-  return `${RELEASE_PREFIX}current/leg`;
-}
-
-function getRoundStandingsName(roundId) {
-  return `${RELEASE_PREFIX}rounds/${roundId}/standings`;
-}
-
-function getRoundSettlementName(roundId) {
-  return `${RELEASE_PREFIX}rounds/${roundId}/settlement`;
-}
-
-function getPlayerLegStatusName(legId, handle) {
-  return `${RELEASE_PREFIX}legs/${legId}/players/${handle}/status`;
-}
-
-function getPaymentReceiptName(roundId, handle) {
-  return `${RELEASE_PREFIX}rounds/${roundId}/payments/${handle}`;
-}
-
 function getRoundIdFromBlockHeight(blockHeight) {
   return Math.floor(blockHeight / RELEASE_ROUND_BLOCK_SIZE);
 }
@@ -872,33 +848,46 @@ function buildLeaderboardRankPayload({ handle, difficulty, leaderboardCandidates
   };
 }
 
-async function upsertChainJsonRecord(name, serializedValue) {
-  await ensureNameRegistered(name, serializedValue);
-  await callRpc("name_update", [name, serializedValue]);
+async function deriveSettlementForRound(roundId, currentBlockHeight) {
+  const roundRange = getRoundBlockRange(roundId);
+  if (currentBlockHeight <= roundRange.blockEnd) {
+    return null;
+  }
+
+  const { standingsPayload } = await buildRoundStandingsPayload(roundId, currentBlockHeight);
+  return buildSettlementFromStandings(standingsPayload, currentBlockHeight);
 }
 
-async function readPlayerLegStatus(handle, legId) {
-  const statusName = getPlayerLegStatusName(legId, handle);
-  const statusState = await readName(statusName);
-  if (!statusState.exists) {
-    return {
-      version: RELEASE_SCHEMA_VERSION,
-      game: "voidrunner3d",
-      legId,
-      handle,
-      unpaid: false,
-      blockedUntilLegEnd: false,
-      outstanding: []
-    };
+async function derivePlayerLegStatus(handle, currentBlockHeight) {
+  const legId = getLegIdFromBlockHeight(currentBlockHeight);
+  const legRange = getLegBlockRange(legId);
+  const firstRoundIdInLeg = getRoundIdFromBlockHeight(legRange.blockStart);
+  const currentRoundId = getRoundIdFromBlockHeight(currentBlockHeight);
+
+  const outstanding = [];
+  for (let roundId = firstRoundIdInLeg; roundId < currentRoundId; roundId++) {
+    const settlementPayload = await deriveSettlementForRound(roundId, currentBlockHeight);
+    if (!settlementPayload || settlementPayload.status !== "settled") continue;
+
+    const liabilityEntry = settlementPayload.liabilities.find((entry) => entry.handle === handle);
+    if (!liabilityEntry) continue;
+
+    outstanding.push({
+      roundId,
+      amountDue: liabilityEntry.amount,
+      amountPaid: 0,
+      status: "due"
+    });
   }
-  return parsePlayerLegStatusValue(statusState.value, legId, handle) || {
+
+  return {
     version: RELEASE_SCHEMA_VERSION,
     game: "voidrunner3d",
     legId,
     handle,
-    unpaid: false,
-    blockedUntilLegEnd: false,
-    outstanding: []
+    unpaid: outstanding.length > 0,
+    blockedUntilLegEnd: outstanding.length > 0,
+    outstanding
   };
 }
 
@@ -906,18 +895,8 @@ async function buildRoundStandingsPayload(roundId, currentBlockHeight) {
   const roundRange = getRoundBlockRange(roundId);
   const legId = getLegIdFromBlockHeight(roundRange.blockStart);
   const leaderboardCandidates = await getLeaderboardCandidatesForDifficulty(FEATURED_LEADERBOARD_DIFFICULTY);
-  const statusByHandle = new Map();
-  const eligibleCandidates = [];
 
-  for (const candidateEntry of leaderboardCandidates) {
-    const playerStatus = await readPlayerLegStatus(candidateEntry.handle, legId);
-    statusByHandle.set(candidateEntry.handle, playerStatus);
-    if (!playerStatus.blockedUntilLegEnd) {
-      eligibleCandidates.push(candidateEntry);
-    }
-  }
-
-  const rankedEntries = eligibleCandidates.slice(0, MAX_ENTRIES).map((candidateEntry, index) => ({
+  const rankedEntries = leaderboardCandidates.slice(0, MAX_ENTRIES).map((candidateEntry, index) => ({
     rank: index + 1,
     handle: candidateEntry.handle,
     score: candidateEntry.score,
@@ -936,8 +915,7 @@ async function buildRoundStandingsPayload(roundId, currentBlockHeight) {
       generatedAtBlock: currentBlockHeight,
       entries: rankedEntries
     },
-    legId,
-    statusByHandle
+    legId
   };
 }
 
@@ -994,51 +972,7 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
 }
 
 async function ensureRoundFinalized(roundId, currentBlockHeight) {
-  const roundRange = getRoundBlockRange(roundId);
-  if (currentBlockHeight <= roundRange.blockEnd) {
-    return null;
-  }
-
-  const settlementName = getRoundSettlementName(roundId);
-  const existingSettlementState = await readName(settlementName);
-  if (existingSettlementState.exists) {
-    const parsedSettlement = parseRoundSettlementValue(existingSettlementState.value, roundId);
-    if (parsedSettlement) return parsedSettlement;
-  }
-
-  const { standingsPayload, legId } = await buildRoundStandingsPayload(roundId, currentBlockHeight);
-  await upsertChainJsonRecord(getRoundStandingsName(roundId), serializeRoundStandingsValue(standingsPayload));
-
-  const settlementPayload = buildSettlementFromStandings(standingsPayload, currentBlockHeight);
-  await upsertChainJsonRecord(settlementName, serializeRoundSettlementValue(settlementPayload));
-
-  if (settlementPayload.status === "settled") {
-    for (const liabilityEntry of settlementPayload.liabilities) {
-      const currentPlayerLegStatus = await readPlayerLegStatus(liabilityEntry.handle, legId);
-      const nextOutstanding = currentPlayerLegStatus.outstanding.filter((outstandingEntry) => outstandingEntry.roundId !== roundId);
-      nextOutstanding.push({
-        roundId,
-        amountDue: liabilityEntry.amount,
-        amountPaid: 0,
-        status: "due"
-      });
-      const nextPlayerLegStatus = {
-        version: RELEASE_SCHEMA_VERSION,
-        game: "voidrunner3d",
-        legId,
-        handle: liabilityEntry.handle,
-        unpaid: true,
-        blockedUntilLegEnd: true,
-        outstanding: nextOutstanding
-      };
-      await upsertChainJsonRecord(
-        getPlayerLegStatusName(legId, liabilityEntry.handle),
-        serializePlayerLegStatusValue(nextPlayerLegStatus)
-      );
-    }
-  }
-
-  return settlementPayload;
+  return deriveSettlementForRound(roundId, currentBlockHeight);
 }
 
 async function getCurrentRoundAndLegPayload(currentBlockHeight) {
@@ -1067,51 +1001,24 @@ async function getCurrentRoundAndLegPayload(currentBlockHeight) {
   };
 }
 
-async function ensureCurrentRoundAndLegPointers(currentBlockHeight) {
-  const currentPayload = await getCurrentRoundAndLegPayload(currentBlockHeight);
-  const currentRoundValue = JSON.stringify({
-    version: RELEASE_SCHEMA_VERSION,
-    game: "voidrunner3d",
-    ...currentPayload.round
-  });
-  const currentLegValue = JSON.stringify({
-    version: RELEASE_SCHEMA_VERSION,
-    game: "voidrunner3d",
-    ...currentPayload.leg
-  });
-  await upsertChainJsonRecord(getCurrentRoundName(), currentRoundValue);
-  await upsertChainJsonRecord(getCurrentLegName(), currentLegValue);
-  return currentPayload;
-}
-
 async function getCurrentStandingsPayload(currentBlockHeight) {
   const roundId = getRoundIdFromBlockHeight(currentBlockHeight);
-  const roundStandingsName = getRoundStandingsName(roundId);
-  const roundStandingsState = await readName(roundStandingsName);
-  if (roundStandingsState.exists) {
-    const parsedStandings = parseRoundStandingsValue(roundStandingsState.value, roundId);
-    if (parsedStandings) return parsedStandings;
-  }
   const { standingsPayload } = await buildRoundStandingsPayload(roundId, currentBlockHeight);
   return standingsPayload;
 }
 
 async function getRoundSettlementPayload(roundId, currentBlockHeight) {
-  await ensureRoundFinalized(roundId, currentBlockHeight);
-  const settlementState = await readName(getRoundSettlementName(roundId));
-  if (!settlementState.exists) return null;
-  return parseRoundSettlementValue(settlementState.value, roundId);
+  return ensureRoundFinalized(roundId, currentBlockHeight);
 }
 
 async function getPlayerEligibilityPayload(handle, currentBlockHeight) {
-  const legId = getLegIdFromBlockHeight(currentBlockHeight);
   const playerStatus = await readPlayerStatus(handle);
-  const playerLegStatus = await readPlayerLegStatus(handle, legId);
+  const playerLegStatus = await derivePlayerLegStatus(handle, currentBlockHeight);
   const eligible = playerStatus.canSubmit && !playerLegStatus.blockedUntilLegEnd;
 
   return {
     handle,
-    legId,
+    legId: playerLegStatus.legId,
     difficulty: FEATURED_LEADERBOARD_DIFFICULTY,
     eligible,
     reasons: {
@@ -1124,11 +1031,10 @@ async function getPlayerEligibilityPayload(handle, currentBlockHeight) {
 }
 
 async function getPlayerOutstandingObligationsPayload(handle, currentBlockHeight) {
-  const legId = getLegIdFromBlockHeight(currentBlockHeight);
-  const playerLegStatus = await readPlayerLegStatus(handle, legId);
+  const playerLegStatus = await derivePlayerLegStatus(handle, currentBlockHeight);
   return {
     handle,
-    legId,
+    legId: playerLegStatus.legId,
     unpaid: playerLegStatus.unpaid,
     blockedUntilLegEnd: playerLegStatus.blockedUntilLegEnd,
     outstanding: playerLegStatus.outstanding
@@ -1137,27 +1043,14 @@ async function getPlayerOutstandingObligationsPayload(handle, currentBlockHeight
 
 async function getRecentSettledRoundsPayload(currentBlockHeight, limit) {
   const currentRoundId = getRoundIdFromBlockHeight(currentBlockHeight);
-  if (currentRoundId > 0) {
-    await ensureRoundFinalized(currentRoundId - 1, currentBlockHeight);
-  }
-
-  const scannedRows = await scanRecordNamesByPrefix(`${RELEASE_PREFIX}rounds/`);
   const settlements = [];
 
-  for (const row of scannedRows) {
-    const onChainName = typeof row?.name === "string" ? row.name : "";
-    const onChainValue = typeof row?.value === "string" ? row.value : "";
-    if (!onChainName.endsWith("/settlement")) continue;
-    const match = onChainName.match(/\/rounds\/(\d+)\/settlement$/);
-    if (!match) continue;
-    const roundId = sanitizeNonNegativeInteger(match[1]);
-    if (roundId === null) continue;
-    const parsedSettlement = parseRoundSettlementValue(onChainValue, roundId);
-    if (!parsedSettlement) continue;
-    settlements.push(parsedSettlement);
+  for (let roundId = Math.max(0, currentRoundId - 1); roundId >= 0 && settlements.length < limit; roundId--) {
+    const settlementPayload = await deriveSettlementForRound(roundId, currentBlockHeight);
+    if (!settlementPayload) continue;
+    settlements.push(settlementPayload);
   }
 
-  settlements.sort((leftSettlement, rightSettlement) => rightSettlement.roundId - leftSettlement.roundId);
   return settlements.slice(0, limit);
 }
 
@@ -1370,14 +1263,14 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && requestUrl.pathname === "/api/release/current-round") {
       const currentBlockHeight = await getCurrentBlockHeight();
-      const currentPayload = await ensureCurrentRoundAndLegPointers(currentBlockHeight);
+      const currentPayload = await getCurrentRoundAndLegPayload(currentBlockHeight);
       sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, round: currentPayload.round });
       return;
     }
 
     if (request.method === "GET" && requestUrl.pathname === "/api/release/current-leg") {
       const currentBlockHeight = await getCurrentBlockHeight();
-      const currentPayload = await ensureCurrentRoundAndLegPointers(currentBlockHeight);
+      const currentPayload = await getCurrentRoundAndLegPayload(currentBlockHeight);
       sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, leg: currentPayload.leg });
       return;
     }

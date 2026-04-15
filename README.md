@@ -20,27 +20,28 @@ The release economy is derived from block height in [`leaderboard-relay.js`](lea
 Round and leg IDs, block ranges, and remaining blocks are derived by the relay at runtime through [`getRoundIdFromBlockHeight()`](leaderboard-relay.js:360), [`getLegIdFromBlockHeight()`](leaderboard-relay.js:364), [`getRoundBlockRange()`](leaderboard-relay.js:368), and [`getLegBlockRange()`](leaderboard-relay.js:376).
 
 ### Settlement model
-The public relay finalizes release rounds from chain-backed standings in [`ensureRoundFinalized()`](leaderboard-relay.js:996).
+The public relay derives release settlements from current block height and player-owned records via [`ensureRoundFinalized()`](leaderboard-relay.js:987).
 
-If a closed round has at least 10 qualified participants, the relay writes:
+If a closed round has at least 10 qualified participants, the relay derives:
 - top 4 winner payouts: 100, 70, 20, 10 ROD via [`RELEASE_PAYOUTS`](leaderboard-relay.js:60)
 - bottom 6 liabilities: 28, 30, 33, 35, 36, 38 ROD via [`RELEASE_LIABILITIES`](leaderboard-relay.js:61)
 
-If a round closes without enough qualified players, the settlement is recorded as `closed-no-settlement` in [`buildSettlementFromStandings()`](leaderboard-relay.js:944).
+If a round closes without enough qualified players, the settlement is returned as `closed-no-settlement` by [`buildSettlementFromStandings()`](leaderboard-relay.js:912).
 
 ### Player state model
 The shipped runtime keeps the player-owned leaderboard model:
 - identity record: `p/<handle>` via [`getIdentityNameForHandle()`](leaderboard-relay.js:295)
 - owned game record: `g/voidrunner3d/<handle>/record` via [`getRecordNameForHandle()`](leaderboard-relay.js:299)
-- encoded score envelopes: [`parseRecordValue()`](leaderboard-relay.js:468) and [`serializeRecordValue()`](leaderboard-relay.js:539)
+- encoded score envelopes: [`parseRecordValue()`](leaderboard-relay.js:421) and [`serializeRecordValue()`](leaderboard-relay.js:492)
 
-Release economy state is exposed and persisted through names under `g/voidrunner3d/release/v1/`, including:
-- current round pointer via [`getCurrentRoundName()`](leaderboard-relay.js:336)
-- current leg pointer via [`getCurrentLegName()`](leaderboard-relay.js:340)
-- per-round standings via [`getRoundStandingsName()`](leaderboard-relay.js:344)
-- per-round settlement via [`getRoundSettlementName()`](leaderboard-relay.js:348)
-- per-player leg status via [`getPlayerLegStatusName()`](leaderboard-relay.js:352)
-- payment receipt slots via [`getPaymentReceiptName()`](leaderboard-relay.js:356)
+Release economy responses are derived at request time from block height and scanned player records through:
+- round and leg derivation via [`getCurrentRoundAndLegPayload()`](leaderboard-relay.js:992)
+- standings derivation via [`getCurrentStandingsPayload()`](leaderboard-relay.js:1015)
+- settlement derivation via [`getRoundSettlementPayload()`](leaderboard-relay.js:1021)
+- eligibility and obligations derivation via [`getPlayerEligibilityPayload()`](leaderboard-relay.js:1025) and [`getPlayerOutstandingObligationsPayload()`](leaderboard-relay.js:1045)
+- recent settled-round derivation via [`getRecentSettledRoundsPayload()`](leaderboard-relay.js:1056)
+
+No derived release-economy pointers, standings, settlements, or player-leg statuses are written on-chain by the public relay.
 
 ## Public relay API
 
