@@ -10,6 +10,12 @@ const MAX_SCORE_SECONDS = 86400;
 const PRIZE_PREFIX = `${GAME_PREFIX}prizes/`;
 const RECORD_ENVELOPE_VERSION = 2;
 const RECORD_ENVELOPE_ALGORITHM = "sha256";
+const RELEASE_ROUND_BLOCK_SIZE = 120;
+const RELEASE_LEG_BLOCK_SIZE = 1440;
+const RELEASE_ROUNDS_PER_LEG = 12;
+const RELEASE_PAYOUTS = Object.freeze([100, 70, 20, 10]);
+const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);
+const RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS = 10;
 
 const difficultyKeys = Object.freeze({
   easy: true,
@@ -281,6 +287,79 @@ function serializeRecordValue(handle, scoresByDifficulty) {
     payload: encodedPayload,
     digest
   });
+}
+
+function getRoundIdFromBlockHeight(blockHeight) {
+  return Math.floor(blockHeight / RELEASE_ROUND_BLOCK_SIZE);
+}
+
+function getLegIdFromBlockHeight(blockHeight) {
+  return Math.floor(blockHeight / RELEASE_LEG_BLOCK_SIZE);
+}
+
+function getRoundBlockRange(roundId) {
+  const blockStart = roundId * RELEASE_ROUND_BLOCK_SIZE;
+  return {
+    blockStart,
+    blockEnd: blockStart + RELEASE_ROUND_BLOCK_SIZE - 1
+  };
+}
+
+function getLegBlockRange(legId) {
+  const blockStart = legId * RELEASE_LEG_BLOCK_SIZE;
+  return {
+    blockStart,
+    blockEnd: blockStart + RELEASE_LEG_BLOCK_SIZE - 1
+  };
+}
+
+function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
+  const topEntries = standingsPayload.entries;
+  if (topEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+    return {
+      version: 1,
+      game: "voidrunner3d",
+      roundId: standingsPayload.roundId,
+      legId: standingsPayload.legId,
+      roundStart: standingsPayload.roundStart,
+      roundEnd: standingsPayload.roundEnd,
+      status: "closed-no-settlement",
+      reason: "insufficient-qualified-participants",
+      qualifiedParticipants: topEntries.length,
+      minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
+      generatedAtBlock: currentBlockHeight,
+      winners: [],
+      liabilities: []
+    };
+  }
+
+  return {
+    version: 1,
+    game: "voidrunner3d",
+    roundId: standingsPayload.roundId,
+    legId: standingsPayload.legId,
+    roundStart: standingsPayload.roundStart,
+    roundEnd: standingsPayload.roundEnd,
+    status: "settled",
+    reason: null,
+    qualifiedParticipants: topEntries.length,
+    minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
+    generatedAtBlock: currentBlockHeight,
+    winners: topEntries.slice(0, RELEASE_PAYOUTS.length).map((entry, index) => ({
+      rank: entry.rank,
+      handle: entry.handle,
+      score: entry.score,
+      amount: RELEASE_PAYOUTS[index]
+    })),
+    liabilities: topEntries.slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length).map((entry, index) => ({
+      rank: entry.rank,
+      handle: entry.handle,
+      score: entry.score,
+      amount: RELEASE_LIABILITIES[index],
+      amountPaid: 0,
+      status: "due"
+    }))
+  };
 }
 
 function applyScoreSubmission(existingRecord, handle, difficulty, score, timestamp) {
@@ -562,81 +641,62 @@ section("leaderboard aggregation from scanned player records");
   assert("uses updatedAt to break score ties", entries[0]?.handle === "bravo", JSON.stringify(entries));
 }
 
-section("prize record schema validation");
+section("release round and leg derivation");
 {
-  const validPrize = parsePrizeRecordValue(
-    JSON.stringify({
-      version: 1,
-      type: "hourly",
-      index: 12,
-      winner: "Pilot01",
-      score: 42.125,
-      difficulty: "hard",
-      blockStart: 1000,
-      blockEnd: 1100,
-      paid: true,
-      txid: "abc123",
-      paidAtHeight: 1200,
-      timestamp: 1710000000000
-    }),
-    "hourly",
-    12
-  );
+  const roundAtBoundary = getRoundIdFromBlockHeight(120);
+  const legAtBoundary = getLegIdFromBlockHeight(1440);
+  const roundBeforeBoundary = getRoundIdFromBlockHeight(119);
+  const legBeforeBoundary = getLegIdFromBlockHeight(1439);
+  const roundRange = getRoundBlockRange(102);
+  const legRange = getLegBlockRange(8);
 
-  assert("valid prize record parses", !!validPrize, JSON.stringify(validPrize));
-  assert("winner is normalized via handle sanitization", validPrize?.winner === "pilot01", JSON.stringify(validPrize));
-  assert("paid prize keeps txid", validPrize?.txid === "abc123", JSON.stringify(validPrize));
+  assert("round id stays in round 0 through block 119", roundBeforeBoundary === 0, String(roundBeforeBoundary));
+  assert("round id advances at block 120", roundAtBoundary === 1, String(roundAtBoundary));
+  assert("leg id stays in leg 0 through block 1439", legBeforeBoundary === 0, String(legBeforeBoundary));
+  assert("leg id advances at block 1440", legAtBoundary === 1, String(legAtBoundary));
+  assert("release rounds per leg remains 12", RELEASE_ROUNDS_PER_LEG === 12, String(RELEASE_ROUNDS_PER_LEG));
+  assert("round block range spans exactly 120 blocks", roundRange.blockStart === 12240 && roundRange.blockEnd === 12359, JSON.stringify(roundRange));
+  assert("leg block range spans exactly 1440 blocks", legRange.blockStart === 11520 && legRange.blockEnd === 12959, JSON.stringify(legRange));
 }
-assert(
-  "paid prize without txid is rejected",
-  parsePrizeRecordValue(JSON.stringify({
-    version: 1,
-    type: "hourly",
-    index: 2,
-    winner: "pilot02",
-    score: 10,
-    difficulty: "easy",
-    blockStart: 1,
-    blockEnd: 2,
-    paid: true,
-    timestamp: 1000
-  }), "hourly", 2) === null
-);
-assert(
-  "blockEnd lower than blockStart is rejected",
-  parsePrizeRecordValue(JSON.stringify({
-    version: 1,
-    type: "daily",
-    index: 1,
-    winner: "pilot02",
-    score: 10,
-    difficulty: "easy",
-    blockStart: 20,
-    blockEnd: 19,
-    paid: false,
-    txid: null,
-    paidAtHeight: null,
-    timestamp: 1000
-  }), "daily", 1) === null
-);
 
-section("prize window countdown status");
+section("release settlement derivation");
 {
-  const hourlyStartStatus = buildPrizeWindowStatus("hourly", 0);
-  assert("hourly window size is 120 blocks", getPrizeWindowSize("hourly") === 120);
-  assert("hourly at block 0 is window index 0", hourlyStartStatus?.currentWindowIndex === 0, JSON.stringify(hourlyStartStatus));
-  assert("hourly at block 0 has 119 remaining", hourlyStartStatus?.blocksRemaining === 119, JSON.stringify(hourlyStartStatus));
-  assert("hourly at block 0 is 0.833 percent complete", hourlyStartStatus?.percentComplete === 0.833, JSON.stringify(hourlyStartStatus));
+  const insufficientSettlement = buildSettlementFromStandings({
+    roundId: 101,
+    legId: 8,
+    roundStart: 12120,
+    roundEnd: 12239,
+    entries: Array.from({ length: 3 }, (_, index) => ({
+      rank: index + 1,
+      handle: `p0${index + 1}`,
+      score: 50 - index
+    }))
+  }, 12345);
+
+  assert("insufficient participants produce closed-no-settlement", insufficientSettlement.status === "closed-no-settlement", JSON.stringify(insufficientSettlement));
+  assert("insufficient participants expose explicit reason", insufficientSettlement.reason === "insufficient-qualified-participants", JSON.stringify(insufficientSettlement));
+  assert("insufficient participants produce no winners or liabilities", insufficientSettlement.winners.length === 0 && insufficientSettlement.liabilities.length === 0, JSON.stringify(insufficientSettlement));
 }
 {
-  const dailyBoundaryStatus = buildPrizeWindowStatus("daily", 2880);
-  assert("daily at block 2880 enters window index 1", dailyBoundaryStatus?.currentWindowIndex === 1, JSON.stringify(dailyBoundaryStatus));
-  assert("daily at block 2880 resets remaining blocks", dailyBoundaryStatus?.blocksRemaining === 2879, JSON.stringify(dailyBoundaryStatus));
-  assert("daily at block 2880 resets percent complete", dailyBoundaryStatus?.percentComplete === 0.035, JSON.stringify(dailyBoundaryStatus));
+  const settledPayload = buildSettlementFromStandings({
+    roundId: 101,
+    legId: 8,
+    roundStart: 12120,
+    roundEnd: 12239,
+    entries: Array.from({ length: 10 }, (_, index) => ({
+      rank: index + 1,
+      handle: `p${String(index).padStart(2, "0")}`,
+      score: 100 - index
+    }))
+  }, 12345);
+
+  assert("qualified round produces settled status", settledPayload.status === "settled", JSON.stringify(settledPayload));
+  assert("qualified round awards top 4 winners", settledPayload.winners.length === 4, JSON.stringify(settledPayload.winners));
+  assert("qualified round assigns bottom 6 liabilities", settledPayload.liabilities.length === 6, JSON.stringify(settledPayload.liabilities));
+  assert("winner payouts match release amounts", settledPayload.winners.map((entry) => entry.amount).join(",") === RELEASE_PAYOUTS.join(","), JSON.stringify(settledPayload.winners));
+  assert("liability amounts match release schedule", settledPayload.liabilities.map((entry) => entry.amount).join(",") === RELEASE_LIABILITIES.join(","), JSON.stringify(settledPayload.liabilities));
+  assert("liabilities start as due with zero amountPaid", settledPayload.liabilities.every((entry) => entry.status === "due" && entry.amountPaid === 0), JSON.stringify(settledPayload.liabilities));
 }
-assert("invalid prize type has no window size", getPrizeWindowSize("monthly") === null);
-assert("invalid prize type produces null countdown status", buildPrizeWindowStatus("monthly", 50) === null);
-assert("negative block height produces null countdown status", buildPrizeWindowStatus("hourly", -1) === null);
 
 console.log(`\n════════════════════════════════`);
 console.log(`Results: ${passed} passed, ${failed} failed`);

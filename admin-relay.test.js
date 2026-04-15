@@ -138,6 +138,18 @@ async function runTests() {
   const healthResponse = await request("GET", "/health");
   assert("admin relay health returns 200", healthResponse.status === 200, `got ${healthResponse.status}`);
   assert("admin relay health marks admin=true", healthResponse.body?.admin === true, JSON.stringify(healthResponse.body));
+  assert("admin relay health reports prize pot config flag", healthResponse.body?.prizePotAddressConfigured === false, JSON.stringify(healthResponse.body));
+
+  const missingReleaseRouteResponse = await request("GET", "/release/current-round");
+  assert("admin relay does not expose public release read routes", missingReleaseRouteResponse.status === 404, `got ${missingReleaseRouteResponse.status}`);
+
+  const deprecatedPrizeWriteResponse = await request("POST", "/prizes", { adminKey: "wrong" });
+  assert("admin relay rejects deprecated prize write route", deprecatedPrizeWriteResponse.status === 410, `got ${deprecatedPrizeWriteResponse.status}`);
+  assert("deprecated prize write route is diagnostics-only scoped", deprecatedPrizeWriteResponse.body?.scope === "diagnostics-only", JSON.stringify(deprecatedPrizeWriteResponse.body));
+
+  const deprecatedCloseWindowResponse = await request("POST", "/prizes/close-window", { adminKey: "wrong" });
+  assert("admin relay rejects deprecated close-window route", deprecatedCloseWindowResponse.status === 410, `got ${deprecatedCloseWindowResponse.status}`);
+  assert("deprecated close-window route reports non-authoritative release model", deprecatedCloseWindowResponse.body?.message?.includes("retired in v0.1.0") === true, JSON.stringify(deprecatedCloseWindowResponse.body));
   stopAdminRelay();
 
   console.log("\n════════════════════════════════");
@@ -150,4 +162,3 @@ runTests().catch((error) => {
   console.error("Test runner error:", error);
   process.exit(1);
 });
-

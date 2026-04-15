@@ -1,91 +1,185 @@
-# Void Runner 3D Relay & Browser Experience
+# Void Runner 3D v0.1.0
 
 ## Overview
-- Void Runner 3D is a browser-friendly 3D space dodging game that runs inside a single [`index.html`](index.html) client using Three.js, procedural audio, and localStorage while targeting smooth 60 FPS play across desktop and mobile browsers.
-- The current MVP uses a split relay architecture: the public [`leaderboard-relay.js`](leaderboard-relay.js) serves health, leaderboard, registration, and prize-read telemetry, while the admin-only [`admin-relay.js`](admin-relay.js) handles prize window writes, sendtoname payouts, and other protected operations.
-- Players survive asteroid fields across three difficulty tiers, collect power-ups, register a unique handle, and submit player-owned on-chain records instead of writing into a shared leaderboard namespace.
+- [`index.html`](index.html) is the shipped single-file browser client.
+- [`leaderboard-relay.js`](leaderboard-relay.js) is the authoritative public relay for leaderboard reads, player registration, player-owned score submission, integrity enforcement, and release economy views.
+- [`admin-relay.js`](admin-relay.js) is limited to diagnostics-only health reporting when `ADMIN=true`; it is not an authoritative economy service in `v0.1.0`.
 
-## Table of Contents
-1. [Installation](#installation)
-2. [Beta Launch Checklist](#beta-launch-checklist)
-3. [Usage Guidelines](#usage-guidelines)
-4. [Technical Details](#technical-details)
-5. [Contribution Guidelines](#contribution-guidelines)
-6. [Changelog](#changelog)
-7. [License](#license)
+The shipped `v0.1.0` runtime matches the release-track implementation in code rather than the earlier MVP prize-window model.
 
-## Installation
-1. Ensure you have Node.js **18+** installed as required by [`package.json`](package.json:15-17).
-2. Run `npm install` if needed. The project currently has no external npm packages, but the command remains safe for future updates.
-3. Start the public relay with `npm run relay` or `node leaderboard-relay.js` to expose leaderboard, health, registration, and public prize telemetry on `127.0.0.1:8787` through [`relay`](package.json:7).
-4. Start the admin relay with `npm run relay:admin` or `node admin-relay.js` after configuring `ADMIN=true`, `PRIZE_POT_ADDRESS`, and `MVP_ADMIN_KEY`; this uses [`relay:admin`](package.json:8) and keeps prize and payout writes isolated from public traffic.
-5. Open [`index.html`](index.html) in a current browser (Chrome, Firefox, Safari, Edge, or mobile equivalents) through a static host or `file://` URI to play the game.
-6. Make sure a local SpaceXpanse ROD node is available at `127.0.0.1:11999` so both relays can fulfill JSON-RPC requests.
-7. Ensure RPC credentials in [`.env`](.env) and `spacexpanse.conf` match your local node settings.
+## Shipped release model
 
-## Beta Launch Checklist
+### Deterministic rounds and legs
+The release economy is derived from block height in [`leaderboard-relay.js`](leaderboard-relay.js:55):
+- release namespace: `g/voidrunner3d/release/v1/`
+- round size: 120 blocks
+- leg size: 1440 blocks
+- rounds per leg: 12
+- featured release difficulty: Normal
 
-### Minimum operational steps
-1. Confirm Node.js 18+ (`node -v`) and a SpaceXpanse ROD node listening on `127.0.0.1:11999`.
-2. Set `ROD_RPC_USER` and `ROD_RPC_PASSWORD` in [`.env`](.env) if your RPC node enforces authentication.
-3. Optionally define `MVP_ADMIN_KEY`, `MVP_PAYOUT_AMOUNT`, `ADMIN=true`, and `PRIZE_POT_ADDRESS` before starting relays.
-4. Start the public relay with `npm run relay` or `node leaderboard-relay.js`.
-5. Start the admin relay with `npm run relay:admin` or `node admin-relay.js`.
-6. Verify `GET /api/health` reports `relay: "up"`, `node: "up"`, and an `integrity` payload that matches expectations.
-7. Exercise the browser client through [`index.html`](index.html) and complete a registration plus submit flow.
+Round and leg IDs, block ranges, and remaining blocks are derived by the relay at runtime through [`getRoundIdFromBlockHeight()`](leaderboard-relay.js:360), [`getLegIdFromBlockHeight()`](leaderboard-relay.js:364), [`getRoundBlockRange()`](leaderboard-relay.js:368), and [`getLegBlockRange()`](leaderboard-relay.js:376).
 
-### Runtime dependencies and startup order
-- **Node.js 18+** drives both relays and the validation scripts declared in [`package.json`](package.json:6-14).
-- **SpaceXpanse ROD JSON-RPC node** must be running on `127.0.0.1:11999` before either relay boots so they can issue `name_show`, `name_update`, `getblockcount`, and payout RPC calls.
-- **Public relay startup**: `npm run relay` → integrity initialization → listen on `127.0.0.1:8787`.
-- **Admin relay startup**: `npm run relay:admin` with `ADMIN=true`, `PRIZE_POT_ADDRESS`, and `MVP_ADMIN_KEY` on its dedicated admin port.
-- **Game client startup**: open [`index.html`](index.html) after the public relay is healthy.
+### Settlement model
+The public relay finalizes release rounds from chain-backed standings in [`ensureRoundFinalized()`](leaderboard-relay.js:996).
 
-### Runtime environment variables
-- `RELAY_INTEGRITY_MODE` — `dev` (default), `warn`, or `strict`; non-`dev` modes hash [`index.html`](index.html) and [`leaderboard-relay.exe`](leaderboard-relay.exe) against on-chain values and can downgrade or block writes.
-- `ROD_RPC_USER` / `ROD_RPC_PASSWORD` — optional unless your ROD node requires RPC auth.
-- `MVP_ADMIN_KEY` — defaults to `voidrunner3d-mvp-admin`; used by protected prize-close flows.
-- `MVP_PAYOUT_AMOUNT` — defaults to `0.01`; fallback payout amount for manual close-window actions.
-- `PRIZE_POT_ADDRESS` — required by the admin relay for prize and payout controls.
-- `ADMIN=true` — required to enable admin-only behavior in [`admin-relay.js`](admin-relay.js).
+If a closed round has at least 10 qualified participants, the relay writes:
+- top 4 winner payouts: 100, 70, 20, 10 ROD via [`RELEASE_PAYOUTS`](leaderboard-relay.js:60)
+- bottom 6 liabilities: 28, 30, 33, 35, 36, 38 ROD via [`RELEASE_LIABILITIES`](leaderboard-relay.js:61)
 
-### Key operational flows
-- **Starting the public relay**: run `npm run relay` or `node leaderboard-relay.js` and confirm the listener on `http://127.0.0.1:8787` starts cleanly.
-- **Starting the admin relay**: run `npm run relay:admin` or `node admin-relay.js` with admin env vars so prize writes, sendtoname payouts, and prize-window controls stay on the admin port only.
-- **Running tests**: run `npm run validate:mvp` via [`validate:mvp`](package.json:13) to execute [`relay.test.js`](relay.test.js), [`relay-http.test.js`](relay-http.test.js), [`admin-relay.test.js`](admin-relay.test.js), and [`game.test.js`](game.test.js) in one pass.
-- **Checking health and integrity**: query `GET /api/health` on the public relay to inspect `relay`, `node`, and `integrity` state.
-- **Reading prize telemetry**: use public `GET /api/prizes/latest` to surface the latest prize metadata and featured winner context without exposing admin writes.
-- **Closing a prize window manually**: send `POST /api/prizes/close-window` to the admin relay with the admin key, prize type (`hourly|daily|weekly`), difficulty (`easy|normal|hard`), block heights, and optional payout amount.
-- **Read-only behavior**: when integrity enters degraded or blocked mode, mutating routes return `503` until the mismatch is resolved or `RELAY_INTEGRITY_MODE` is relaxed.
+If a round closes without enough qualified players, the settlement is recorded as `closed-no-settlement` in [`buildSettlementFromStandings()`](leaderboard-relay.js:944).
 
-## Usage Guidelines
-- At launch, choose Easy, Normal, or Hard and start a run from the main menu.
-- During gameplay, collect shield and speed boost power-ups, dodge asteroid waves, and watch the HUD for timer, difficulty, local best, salvage multiplier, score breakdown, pot funding, and featured rank context.
-- On Game Over, unregistered players see an editable handle field and Register guidance; registered players see a locked handle and a Submit action.
-- Submit only becomes available when the player is registered and the latest run beats that player’s current chain best for the selected difficulty.
-- Duplicate-handle registrations return a clear conflict path so players can choose another handle immediately.
-- Anti-cheat timing now auto-pauses when the tab loses focus or becomes hidden, so survival time no longer advances in the background.
-- Round-specific hourly countdown and recent-winner widgets remain hidden in the public client until the admin-ready telemetry path is fully restored.
+### Player state model
+The shipped runtime keeps the player-owned leaderboard model:
+- identity record: `p/<handle>` via [`getIdentityNameForHandle()`](leaderboard-relay.js:295)
+- owned game record: `g/voidrunner3d/<handle>/record` via [`getRecordNameForHandle()`](leaderboard-relay.js:299)
+- encoded score envelopes: [`parseRecordValue()`](leaderboard-relay.js:468) and [`serializeRecordValue()`](leaderboard-relay.js:539)
 
-## Technical Details
-- The browser client remains a single self-contained [`index.html`](index.html) file with inline markup, styling, and script.
-- The public [`leaderboard-relay.js`](leaderboard-relay.js) exposes `GET /api/health`, `GET /api/player/status`, `POST /api/player/register`, `GET /api/leaderboard`, `POST /api/leaderboard/submit`, and public prize-read telemetry including `GET /api/prizes/latest`.
-- The admin [`admin-relay.js`](admin-relay.js) owns admin-only prize and payout operations including protected prize window writes and `POST /api/prizes/close-window`.
-- Player identity uses the `p/<handle>` namespace, while score records use `g/voidrunner3d/<handle>/record` and update only the owning player’s record.
-- Prize metadata uses `g/voidrunner3d/prizes/{type}/{index}` with latest pointers so clients can read recent prize outcomes without exposing write routes publicly.
-- Difficulty support remains `easy`, `normal`, and `hard`, and top-ten standings are derived by scanning `g/voidrunner3d/` records and aggregating best scores per difficulty.
-- localStorage bests remain independent from on-chain leaderboard standings.
-- Gameplay state still follows the MENU → PLAYING → GAME_OVER → PAUSED flow with object pooling and active-play timer accumulation.
-- [`leaderboard-relay.exe`](leaderboard-relay.exe) mirrors the relay’s read-only verification behavior when integrity warnings are active.
+Release economy state is exposed and persisted through names under `g/voidrunner3d/release/v1/`, including:
+- current round pointer via [`getCurrentRoundName()`](leaderboard-relay.js:336)
+- current leg pointer via [`getCurrentLegName()`](leaderboard-relay.js:340)
+- per-round standings via [`getRoundStandingsName()`](leaderboard-relay.js:344)
+- per-round settlement via [`getRoundSettlementName()`](leaderboard-relay.js:348)
+- per-player leg status via [`getPlayerLegStatusName()`](leaderboard-relay.js:352)
+- payment receipt slots via [`getPaymentReceiptName()`](leaderboard-relay.js:356)
 
-## Contribution Guidelines
-- Document every user-facing change in [`CHANGELOG.md`](CHANGELOG.md).
-- Keep README operational guidance aligned with the current relay split, endpoint behavior, and testing workflow.
-- Preserve the single-file nature of [`index.html`](index.html) unless a breaking architectural change requires otherwise.
-- Use the scripts declared in [`package.json`](package.json:6-14) when verifying relay or game behavior before publishing documentation updates.
+## Public relay API
 
-## Changelog
-- The latest documented changes are tracked in [`CHANGELOG.md`](CHANGELOG.md:1).
+The public relay listens on `127.0.0.1:8787` and exposes the following shipped endpoints from [`leaderboard-relay.js`](leaderboard-relay.js:1203).
+
+### Core endpoints
+- `GET /api/health` — relay and node health plus integrity status via [`/api/health`](leaderboard-relay.js:1223)
+- `GET /api/leaderboard?difficulty=easy|normal|hard` — top 10 leaderboard reconstruction via [`/api/leaderboard`](leaderboard-relay.js:1234)
+- `GET /api/player/status?handle=<handle>` — registration, owned record, and release status via [`/api/player/status`](leaderboard-relay.js:1250)
+- `GET /api/leaderboard/rank?handle=<handle>` — featured normal-rank context via [`/api/leaderboard/rank`](leaderboard-relay.js:1275)
+- `POST /api/player/register` — create `p/<handle>` and owned record via [`/api/player/register`](leaderboard-relay.js:1300)
+- `POST /api/leaderboard/submit` — submit a score into the player-owned record via [`/api/leaderboard/submit`](leaderboard-relay.js:1335)
+
+### Release endpoints
+- `GET /api/release/current-round` via [`/api/release/current-round`](leaderboard-relay.js:1371)
+- `GET /api/release/current-leg` via [`/api/release/current-leg`](leaderboard-relay.js:1378)
+- `GET /api/release/current-standings` via [`/api/release/current-standings`](leaderboard-relay.js:1385)
+- `GET /api/release/round-settlement?roundId=<id>` via [`/api/release/round-settlement`](leaderboard-relay.js:1392)
+- `GET /api/release/player-eligibility?handle=<handle>` via [`/api/release/player-eligibility`](leaderboard-relay.js:1411)
+- `GET /api/release/player-obligations?handle=<handle>` via [`/api/release/player-obligations`](leaderboard-relay.js:1423)
+- `GET /api/release/recent-settled-rounds?limit=<n>` via [`/api/release/recent-settled-rounds`](leaderboard-relay.js:1435)
+
+Legacy public MVP endpoints are removed from the shipped relay. The behavior is covered in [`relay-http.test.js`](relay-http.test.js:564) and [`relay-http.test.js`](relay-http.test.js:576).
+
+## Integrity verification
+
+Integrity checking remains part of the shipped release runtime.
+
+At startup, the relay hashes:
+- [`index.html`](index.html)
+- [`leaderboard-relay.exe`](leaderboard-relay.exe)
+
+and compares them against the expected on-chain values in [`initializeIntegrityVerification()`](leaderboard-relay.js:163).
+
+Supported integrity modes:
+- `dev`
+- `warn`
+- `strict`
+
+When integrity fails in `warn` or `strict`, mutating API requests are blocked by the read-only guard in [`isMutatingRequest()`](leaderboard-relay.js:159) and the request gate in [`server.createServer()`](leaderboard-relay.js:1214).
+
+## Frontend behavior in v0.1.0
+
+### Menu overlay
+The menu now shows release-economy data rather than MVP prize windows.
+
+Shipped widgets in [`index.html`](index.html:572):
+- current round text
+- round countdown
+- current leg text
+- leg countdown
+- player eligibility status
+- reward distribution summary
+
+The menu also shows recent settled rounds in [`index.html`](index.html:584) and the chain leaderboard by selected difficulty in [`index.html`](index.html:590).
+
+Release overview data is loaded by [`loadReleaseOverview()`](index.html:1353).
+
+### Game-over overlay
+The game-over panel shows release outcome data in [`index.html`](index.html:604):
+- current round placement
+- reward or liability outcome
+- outstanding obligations
+- eligibility gate / blocked status
+- next leg reset countdown
+
+That state is loaded through [`loadGameOverReleaseSummary()`](index.html:1411).
+
+### Gameplay HUD
+The active-run HUD remains focused on gameplay only in [`index.html`](index.html:549):
+- difficulty
+- timer
+- local best
+- salvage state
+- power-up state
+
+Release economy widgets stay on the menu and game-over overlays instead of the gameplay HUD.
+
+### Registration and submission flow
+The browser client keeps the shipped registration and player-owned submission workflow:
+- handle input and register / submit buttons in [`index.html`](index.html:620)
+- registration flow in [`registerPlayerForChain()`](index.html:1720)
+- score submission flow in [`submitScoreToChain()`](index.html:1781)
+- player status refresh in [`refreshPlayerStatus()`](index.html:1676)
+
+Registered handles are locked in the UI after successful registration in [`applyPlayerStatus()`](index.html:1489).
+
+## Diagnostics-only admin relay
+
+[`admin-relay.js`](admin-relay.js) is intentionally reduced in `v0.1.0`.
+
+When `ADMIN=true`, it exposes:
+- `GET /api/health` with `scope: "diagnostics-only"` via [`/api/health`](admin-relay.js:116)
+
+It explicitly marks [`leaderboard-relay.js`](leaderboard-relay.js) as the authoritative economy source via [`authoritativeEconomySource`](admin-relay.js:124).
+
+Deprecated manual MVP routes:
+- `POST /api/prizes`
+- `POST /api/prizes/close-window`
+
+These routes return HTTP 410 and a release deprecation message through [`findDeprecatedRoute()`](admin-relay.js:97) and the deprecated-route handler in [`admin-relay.js`](admin-relay.js:131).
+
+They must not be treated as normal release operations.
+
+## Local development
+
+### Requirements
+- Node.js 18+ per [`package.json`](package.json:15)
+- SpaceXpanse ROD JSON-RPC node at `127.0.0.1:11999`
+
+### Run the relays
+- Public relay: `npm run relay`
+- Diagnostics admin relay: `npm run relay:admin`
+
+### Validation
+The shipped validation command is [`validate:release`](package.json:13):
+
+`npm run validate:release`
+
+It runs:
+- [`relay.test.js`](relay.test.js)
+- [`relay-http.test.js`](relay-http.test.js)
+- [`admin-relay.test.js`](admin-relay.test.js)
+- [`game.test.js`](game.test.js)
+
+Latest validated results for the shipped release state:
+- [`relay.test.js`](relay.test.js): 49 passed, 0 failed
+- [`relay-http.test.js`](relay-http.test.js): 137 passed, 0 failed
+- [`admin-relay.test.js`](admin-relay.test.js): 9 passed, 0 failed
+- [`game.test.js`](game.test.js): 68 passed, 0 failed
+- combined release validation: 261 passed, 0 failed
+
+## Project files
+- [`index.html`](index.html) — shipped browser client
+- [`leaderboard-relay.js`](leaderboard-relay.js) — public release relay
+- [`admin-relay.js`](admin-relay.js) — diagnostics-only admin relay
+- [`leaderboard-relay.exe`](leaderboard-relay.exe) — integrity-tracked relay binary
+- [`doc/release-plan.md`](doc/release-plan.md:1) — release design reference
+- [`doc/sprint-map.md`](doc/sprint-map.md:1) — release sequencing reference
 
 ## License
-- No license file currently exists. Use this repository under the default rights granted by the owner until an explicit license is provided.
+No license file currently exists. Repository usage remains subject to the owner’s default rights until an explicit license is added.

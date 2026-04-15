@@ -170,42 +170,66 @@ async function runTests() {
     assert("chain status shows relay state", isOfflineOrLoading, `"${statusText}"`);
   }
 
-  // ---- Round-only UI hidden (admin relay not ready) ----
-  section("Round-only UI hidden");
+  // ---- Release economy UI blocks ----
+  section("Release economy UI blocks");
   {
-    const menuHourlyCountdownHidden = await page.locator("#menuHourlyCountdown.hidden").count();
-    assert("menu hourly countdown block is hidden", menuHourlyCountdownHidden === 1, `count=${menuHourlyCountdownHidden}`);
+    const menuReleaseBoardVisible = await page.locator("#menuOverlay .release-board").count();
+    assert("menu release snapshot board is visible", menuReleaseBoardVisible >= 1, `count=${menuReleaseBoardVisible}`);
   }
   {
-    const recentWinnersHidden = await page.locator(".recent-winners-board.hidden").count();
-    assert("menu recent winners block is hidden", recentWinnersHidden === 1, `count=${recentWinnersHidden}`);
+    const recentSettledBoardVisible = await page.locator(".recent-settled-board").count();
+    assert("menu recent settled rounds board is visible", recentSettledBoardVisible === 1, `count=${recentSettledBoardVisible}`);
   }
 
-  // ---- Main-menu round funding panel (MVP relay split) ----
-  section("Main-menu pot panel");
+  // ---- Main-menu release economy text ----
+  section("Main-menu release economy text");
   {
     await page.waitForTimeout(300);
-    const potStatusText = await page.textContent("#menuPotStatusText");
+    const roundText = await page.textContent("#menuCurrentRoundText");
     assert(
-      "menu round funding status renders explorer pending state",
-      potStatusText && potStatusText.includes("Explorer API pending"),
-      `text="${potStatusText}"`
+      "menu round line renders release current round text",
+      roundText && roundText.includes("Round"),
+      `text="${roundText}"`
     );
   }
   {
-    const potBalanceText = await page.textContent("#menuPotBalanceText");
+    const legText = await page.textContent("#menuCurrentLegText");
     assert(
-      "menu round funding balance shows relay removal message",
-      potBalanceText && potBalanceText.includes("Unavailable") && potBalanceText.includes("RPC pot balance removed"),
-      `text="${potBalanceText}"`
+      "menu leg line renders release current leg text",
+      legText && legText.includes("Leg"),
+      `text="${legText}"`
     );
   }
   {
-    const potAddressValue = await page.$eval("#menuPotAddressInput", (element) => element.value);
+    const summaryText = await page.textContent("#menuRewardSummaryText");
     assert(
-      "menu round funding address input shows env-config message",
-      potAddressValue === "Configured in .env (PRIZE_POT_ADDRESS)",
-      `value="${potAddressValue}"`
+      "menu reward distribution summary is explicit",
+      summaryText && summaryText.includes("Reward distribution"),
+      `text="${summaryText}"`
+    );
+  }
+  {
+    const countdownText = await page.textContent("#menuRoundCountdownText");
+    assert(
+      "menu round countdown line is visible in release menu",
+      countdownText && countdownText.includes("Round countdown"),
+      `text="${countdownText}"`
+    );
+  }
+  {
+    const legCountdownText = await page.textContent("#menuLegCountdownText");
+    assert(
+      "menu leg countdown line is visible in release menu",
+      legCountdownText && legCountdownText.includes("Leg countdown"),
+      `text="${legCountdownText}"`
+    );
+  }
+  {
+    const eligibilityText = await page.textContent("#menuEligibilityText");
+    assert(
+      "menu eligibility line is visible in release menu",
+      eligibilityText && eligibilityText.includes("Eligibility"),
+      `text="${eligibilityText}"`
     );
   }
 
@@ -522,11 +546,11 @@ async function runTests() {
     const initialHandleValue = await page.$eval("#playerInitialsInput", (element) => element.value);
     assert("stored handle is available on game-over handle input", initialHandleValue === "acepilot", `value="${initialHandleValue}"`);
 
-    const gameOverLatestWinnerHidden = await page.locator("#gameOverOverlay .prize-board.hidden").count();
-    assert("game-over latest hourly winner block is hidden", gameOverLatestWinnerHidden === 1, `count=${gameOverLatestWinnerHidden}`);
+    const gameOverReleaseBoardVisible = await page.locator("#gameOverOverlay .release-board").count();
+    assert("game-over release outcome board is visible", gameOverReleaseBoardVisible === 1, `count=${gameOverReleaseBoardVisible}`);
 
-    const gameOverCountdownHidden = await page.locator("#gameOverHourlyCountdown.hidden").count();
-    assert("game-over hourly countdown block is hidden", gameOverCountdownHidden === 1, `count=${gameOverCountdownHidden}`);
+    const gameOverBlockedText = await page.textContent("#gameOverBlockedText");
+    assert("game-over blocked/unpaid messaging field exists", gameOverBlockedText && gameOverBlockedText.includes("Eligibility gate"), `text="${gameOverBlockedText}"`);
 
     const featuredRowsCount = await page.locator("#featuredRankList li").count();
     assert("featured chart renders compact top-5 rows", featuredRowsCount === 5, `count=${featuredRowsCount}`);
@@ -558,7 +582,24 @@ async function runTests() {
     assert("handle input sanitizes editable values", sanitizedValue === "abc123", `value="${sanitizedValue}"`);
   }
 
-  // ---- Game-over score breakdown (Sprint 6.2 MVP) ----
+  {
+    const gameOverPlacementText = await page.textContent("#gameOverPlacementText");
+    assert("game-over placement release field exists", gameOverPlacementText && gameOverPlacementText.includes("Current round placement"), `text="${gameOverPlacementText}"`);
+  }
+  {
+    const gameOverOutcomeText = await page.textContent("#gameOverOutcomeText");
+    assert("game-over reward or liability field exists", gameOverOutcomeText && gameOverOutcomeText.includes("Reward/liability outcome"), `text="${gameOverOutcomeText}"`);
+  }
+  {
+    const gameOverObligationsText = await page.textContent("#gameOverObligationsText");
+    assert("game-over obligations field exists", gameOverObligationsText && gameOverObligationsText.includes("Outstanding obligations"), `text="${gameOverObligationsText}"`);
+  }
+  {
+    const gameOverLegResetText = await page.textContent("#gameOverLegResetText");
+    assert("game-over leg reset field exists", gameOverLegResetText && gameOverLegResetText.includes("Next leg reset in blocks"), `text="${gameOverLegResetText}"`);
+  }
+
+  // ---- Game-over score breakdown ----
   section("Game-over score breakdown");
   {
     const scoreBreakdownState = await page.evaluate(() => {

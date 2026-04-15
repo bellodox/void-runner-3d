@@ -140,7 +140,7 @@
       text-align: left;
     }
 
-    .prize-board {
+    .release-board {
       margin: 12px 0 10px;
       border: 1px solid rgba(121, 215, 255, 0.35);
       border-radius: 10px;
@@ -149,7 +149,7 @@
       text-align: left;
     }
 
-    .prize-board h2 {
+    .release-board h2 {
       margin: 0 0 8px;
       font-size: 0.9rem;
       color: #c9ecff;
@@ -157,11 +157,16 @@
       text-transform: uppercase;
     }
 
-    .prize-board p {
+    .release-board p {
       margin: 0;
       color: #dcefff;
       font-size: 0.8rem;
       line-height: 1.45;
+    }
+
+    .release-board-grid {
+      display: grid;
+      gap: 8px;
     }
 
     .countdown-chip {
@@ -200,59 +205,7 @@
       color: #ffe7b0;
     }
 
-    .pot-board {
-      margin: 12px 0 10px;
-      border: 1px solid rgba(121, 215, 255, 0.35);
-      border-radius: 10px;
-      background: rgba(7, 14, 28, 0.6);
-      padding: 12px;
-      text-align: left;
-      display: grid;
-      gap: 6px;
-    }
-
-    .pot-board h2 {
-      margin: 0 0 4px;
-      font-size: 0.9rem;
-      color: #c9ecff;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .pot-row {
-      margin: 0;
-      font-size: 0.8rem;
-      color: #dcefff;
-      line-height: 1.45;
-      word-break: break-all;
-    }
-
-    .pot-address-wrap {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .pot-address-input {
-      width: 100%;
-      background: rgba(8, 16, 30, 0.9);
-      border: 1px solid rgba(121, 215, 255, 0.45);
-      color: #e8f7ff;
-      border-radius: 8px;
-      padding: 7px 9px;
-      font-family: inherit;
-      font-size: 0.74rem;
-      letter-spacing: 0.02em;
-    }
-
-    .pot-copy-btn {
-      min-width: 74px;
-      font-size: 0.7rem;
-      padding: 7px 10px;
-    }
-
-    .recent-winners-board {
+    .recent-settled-board {
       margin: 12px 0 10px;
       border: 1px solid rgba(121, 215, 255, 0.35);
       border-radius: 10px;
@@ -261,7 +214,7 @@
       text-align: left;
     }
 
-    .recent-winners-board h2 {
+    .recent-settled-board h2 {
       margin: 0 0 8px;
       font-size: 0.9rem;
       color: #c9ecff;
@@ -269,7 +222,7 @@
       text-transform: uppercase;
     }
 
-    .recent-winners-status {
+    .recent-settled-status {
       margin: 0 0 8px;
       color: #9cc8e2;
       font-size: 0.76rem;
@@ -277,7 +230,7 @@
       line-height: 1.4;
     }
 
-    .recent-winners-list {
+    .recent-settled-list {
       margin: 0;
       padding: 0;
       list-style: none;
@@ -288,33 +241,29 @@
       color: #dcefff;
     }
 
-    .recent-winners-list li {
+    .recent-settled-list li {
       display: grid;
-      grid-template-columns: 56px 1fr auto;
+      grid-template-columns: 1fr;
       gap: 8px;
       padding: 2px 0;
       border-bottom: 1px solid rgba(121, 215, 255, 0.15);
       align-items: center;
     }
 
-    .recent-winners-list li:last-child {
+    .recent-settled-list li:last-child {
       border-bottom: none;
     }
 
-    .recent-winners-list li.empty {
+    .recent-settled-list li.empty {
       grid-template-columns: 1fr;
       color: #a6c6dd;
       border-bottom: none;
       padding: 2px 0 0;
     }
 
-    .pot-board.hidden {
-      display: none;
-    }
-
-    .prize-board.hidden,
+    .release-board.hidden,
     .countdown-chip.hidden,
-    .recent-winners-board.hidden {
+    .recent-settled-board.hidden {
       display: none;
     }
 
@@ -620,25 +569,22 @@
       </div>
       <button id="startBtn" class="action-btn">Start Game</button>
 
-      <div id="menuHourlyCountdown" class="countdown-chip hidden" aria-live="polite">
-        <p class="countdown-label">Hourly Round Window</p>
-        <p id="menuHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
-      </div>
-
-      <div class="pot-board hidden" aria-live="polite">
-        <h2>MVP Round Funding</h2>
-        <p id="menuPotStatusText" class="pot-row">Status: Explorer API pending</p>
-        <p id="menuPotBalanceText" class="pot-row">Balance: unavailable in current MVP relay</p>
-        <div class="pot-address-wrap">
-          <input id="menuPotAddressInput" class="pot-address-input" type="text" value="Address configured in relay env" readonly aria-label="MVP round funding address" />
-          <button id="copyPotAddressBtn" class="small-btn pot-copy-btn" type="button">Copy</button>
+      <div class="release-board" aria-live="polite">
+        <h2>Release Economy Snapshot</h2>
+        <div class="release-board-grid">
+          <p id="menuCurrentRoundText">Round: loading...</p>
+          <p id="menuRoundCountdownText">Round countdown: loading...</p>
+          <p id="menuCurrentLegText">Leg: loading...</p>
+          <p id="menuLegCountdownText">Leg countdown: loading...</p>
+          <p id="menuEligibilityText">Eligibility: enter or register a handle to view status.</p>
+          <p id="menuRewardSummaryText">Reward distribution: loading...</p>
         </div>
       </div>
 
-      <div class="recent-winners-board hidden" aria-live="polite">
-        <h2>Recent Winners</h2>
-        <p id="recentWinnersStatusText" class="recent-winners-status">Loading recent winners...</p>
-        <ol id="recentWinnersList" class="recent-winners-list"></ol>
+      <div class="recent-settled-board" aria-live="polite">
+        <h2>Recent Settled Rounds</h2>
+        <p id="recentSettledRoundsStatusText" class="recent-settled-status">Loading recent settlements...</p>
+        <ol id="recentSettledRoundsList" class="recent-settled-list"></ol>
       </div>
 
       <div class="chain-board">
@@ -655,13 +601,15 @@
       <p id="finalScoreText" class="subtitle">Final Score: 00:00.000</p>
       <p id="scoreBreakdownText" class="subtitle">Survival 00:00.000 · Bonus 00:00.000 · Total 00:00.000</p>
       <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
-      <div class="prize-board hidden" aria-live="polite">
-        <h2>Latest Hourly Round Winner</h2>
-        <p id="latestHourlyPrizeText">Loading latest hourly round winner...</p>
-      </div>
-      <div id="gameOverHourlyCountdown" class="countdown-chip hidden" aria-live="polite">
-        <p class="countdown-label">Hourly Round Window</p>
-        <p id="gameOverHourlyCountdownText" class="countdown-value">Loading hourly countdown...</p>
+      <div class="release-board" aria-live="polite">
+        <h2>Release Outcome</h2>
+        <div class="release-board-grid">
+          <p id="gameOverPlacementText">Current round placement: loading...</p>
+          <p id="gameOverOutcomeText">Reward/liability outcome: loading...</p>
+          <p id="gameOverObligationsText">Outstanding obligations: loading...</p>
+          <p id="gameOverBlockedText">Eligibility gate: loading...</p>
+          <p id="gameOverLegResetText">Next leg reset in blocks: loading...</p>
+        </div>
       </div>
       <div class="featured-rank-board" aria-live="polite">
         <h2>Featured Chart (Normal) Top 5</h2>
@@ -748,13 +696,19 @@
       const registerChainPlayerBtn = document.getElementById("registerChainPlayerBtn");
       const submitChainScoreBtn = document.getElementById("submitChainScoreBtn");
       const submitChainStatusText = document.getElementById("submitChainStatusText");
-      const latestHourlyPrizeText = document.getElementById("latestHourlyPrizeText");
-      const menuPotStatusText = document.getElementById("menuPotStatusText");
-      const menuPotBalanceText = document.getElementById("menuPotBalanceText");
-      const menuPotAddressInput = document.getElementById("menuPotAddressInput");
-      const copyPotAddressBtn = document.getElementById("copyPotAddressBtn");
-      const recentWinnersStatusText = document.getElementById("recentWinnersStatusText");
-      const recentWinnersList = document.getElementById("recentWinnersList");
+      const menuCurrentRoundText = document.getElementById("menuCurrentRoundText");
+      const menuRoundCountdownText = document.getElementById("menuRoundCountdownText");
+      const menuCurrentLegText = document.getElementById("menuCurrentLegText");
+      const menuLegCountdownText = document.getElementById("menuLegCountdownText");
+      const menuEligibilityText = document.getElementById("menuEligibilityText");
+      const menuRewardSummaryText = document.getElementById("menuRewardSummaryText");
+      const recentSettledRoundsStatusText = document.getElementById("recentSettledRoundsStatusText");
+      const recentSettledRoundsList = document.getElementById("recentSettledRoundsList");
+      const gameOverPlacementText = document.getElementById("gameOverPlacementText");
+      const gameOverOutcomeText = document.getElementById("gameOverOutcomeText");
+      const gameOverObligationsText = document.getElementById("gameOverObligationsText");
+      const gameOverBlockedText = document.getElementById("gameOverBlockedText");
+      const gameOverLegResetText = document.getElementById("gameOverLegResetText");
       const featuredRankList = document.getElementById("featuredRankList");
       const featuredRankContextText = document.getElementById("featuredRankContextText");
       const featuredRankDeltaText = document.getElementById("featuredRankDeltaText");
@@ -775,6 +729,16 @@
         hard: null
       };
       let featuredRankPayload = null;
+
+      function formatBlockRange(blockStart, blockEnd) {
+        if (!Number.isInteger(blockStart) || !Number.isInteger(blockEnd)) return "--";
+        return `${blockStart}-${blockEnd}`;
+      }
+
+      function formatBlocksRemaining(blocksRemaining) {
+        if (!Number.isFinite(blocksRemaining)) return "--";
+        return `${Math.max(0, Math.floor(blocksRemaining))} blocks remaining`;
+      }
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -1280,9 +1244,10 @@
         }
       }
 
-      function setLatestHourlyPrizeText(text, color) {
-        latestHourlyPrizeText.textContent = text;
-        latestHourlyPrizeText.style.color = color;
+      function setReleaseText(element, text, color) {
+        if (!element) return;
+        element.textContent = text;
+        if (color) element.style.color = color;
       }
 
       function getPrizeWinnerHandle(prizePayload) {
@@ -1341,82 +1306,184 @@
         };
       }
 
-      function setRecentWinnersStatus(text, color) {
-        recentWinnersStatusText.textContent = text;
-        recentWinnersStatusText.style.color = color;
+      function setRecentSettledStatus(text, color) {
+        setReleaseText(recentSettledRoundsStatusText, text, color);
       }
 
-      function getPrizeTimestamp(prizePayload) {
-        const timestampValue = Number(prizePayload && prizePayload.timestamp);
-        return Number.isFinite(timestampValue) ? timestampValue : 0;
-      }
+      function renderRecentSettledRounds(rounds) {
+        recentSettledRoundsList.innerHTML = "";
 
-      function renderRecentWinners(entries) {
-        recentWinnersList.innerHTML = "";
-
-        if (!entries.length) {
+        if (!rounds.length) {
           const emptyRow = document.createElement("li");
           emptyRow.className = "empty";
-          emptyRow.textContent = "No recent winners yet.";
-          recentWinnersList.appendChild(emptyRow);
+          emptyRow.textContent = "No settled rounds available yet.";
+          recentSettledRoundsList.appendChild(emptyRow);
           return;
         }
 
-        for (const winnerEntry of entries) {
+        for (const roundEntry of rounds) {
           const rowElement = document.createElement("li");
-          const typeElement = document.createElement("span");
-          const detailsElement = document.createElement("span");
-          const payoutElement = document.createElement("span");
-
-          const payoutStatus = getPrizePayoutStatus(winnerEntry.prize);
-          const winnerHandle = getPrizeWinnerHandle(winnerEntry.prize);
-          const winnerScore = getPrizeWinnerScore(winnerEntry.prize);
-          const payoutTxid = typeof winnerEntry.prize?.txid === "string" ? winnerEntry.prize.txid : "";
-          const payoutTxidText = payoutTxid ? ` tx:${shortenTxid(payoutTxid)}` : "";
-
-          typeElement.textContent = winnerEntry.type.toUpperCase();
-          detailsElement.textContent = `${winnerHandle} • ${winnerScore}`;
-          payoutElement.textContent = `${payoutStatus.label}${payoutTxidText}`;
-          payoutElement.style.color = payoutStatus.color;
-          if (payoutTxid) payoutElement.title = payoutTxid;
-
-          rowElement.appendChild(typeElement);
-          rowElement.appendChild(detailsElement);
-          rowElement.appendChild(payoutElement);
-          recentWinnersList.appendChild(rowElement);
+          const winnersCount = Array.isArray(roundEntry.winners) ? roundEntry.winners.length : 0;
+          const liabilitiesCount = Array.isArray(roundEntry.liabilities) ? roundEntry.liabilities.length : 0;
+          const settlementStatus = typeof roundEntry.status === "string" ? roundEntry.status : "unknown";
+          rowElement.textContent = `Round ${roundEntry.roundId ?? "--"} · ${settlementStatus} · winners ${winnersCount} · liabilities ${liabilitiesCount}`;
+          recentSettledRoundsList.appendChild(rowElement);
         }
       }
 
-      async function loadRecentWinners() {
-        setRecentWinnersStatus("Recent winners temporarily disabled in MVP.", "#a6c6dd");
-        renderRecentWinners([]);
+      async function fetchReleaseJson(endpointPath) {
+        const response = await fetch(`${RELAY_BASE_URL}${endpointPath}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
       }
 
-      function setMenuPotStatus(statusLabel, statusColor, balanceLabel, fundingAddress, targetLabel) {
-        menuPotStatusText.textContent = `Status: ${statusLabel}`;
-        menuPotStatusText.style.color = statusColor;
-        menuPotBalanceText.textContent = targetLabel
-          ? `Balance: ${balanceLabel} • ${targetLabel}`
-          : `Balance: ${balanceLabel}`;
-        menuPotAddressInput.value = fundingAddress || "--";
+      function getActiveHandleForRelease() {
+        return sanitizeHandle(playerInitialsInput.value) || registeredPlayerHandle || readStoredHandle();
       }
 
-      async function loadMenuPotStatus() {
-        setMenuPotStatus(
-          "Explorer API pending",
-          "#ffd18a",
-          "Unavailable",
-          "Configured in .env (PRIZE_POT_ADDRESS)",
-          "RPC pot balance removed from public MVP relay"
-        );
+      function summarizeDistribution(settlementPayload) {
+        if (!settlementPayload) return "Reward distribution: settlement unavailable";
+        const winners = Array.isArray(settlementPayload.winners) ? settlementPayload.winners : [];
+        const liabilities = Array.isArray(settlementPayload.liabilities) ? settlementPayload.liabilities : [];
+        const winnerTotal = winners.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+        const liabilityTotal = liabilities.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+        return `Reward distribution: ${winners.length} winners (${winnerTotal}) · ${liabilities.length} liabilities (${liabilityTotal})`;
       }
 
-      async function loadHourlyPrizeWindowStatus() {
-        return;
+      async function loadReleaseOverview() {
+        setReleaseText(menuCurrentRoundText, "Round: loading...", "#9cc8e2");
+        setReleaseText(menuRoundCountdownText, "Round countdown: loading...", "#9cc8e2");
+        setReleaseText(menuCurrentLegText, "Leg: loading...", "#9cc8e2");
+        setReleaseText(menuLegCountdownText, "Leg countdown: loading...", "#9cc8e2");
+        setReleaseText(menuRewardSummaryText, "Reward distribution: loading...", "#9cc8e2");
+        setRecentSettledStatus("Loading recent settlements...", "#9cc8e2");
+        renderRecentSettledRounds([]);
+
+        const activeHandle = getActiveHandleForRelease();
+        if (!activeHandle) {
+          setReleaseText(menuEligibilityText, "Eligibility: register a handle to view current release status.", "#a6c6dd");
+        }
+
+        try {
+          const [currentRoundPayload, currentLegPayload, settlementPayload, recentRoundsPayload, eligibilityPayload] = await Promise.all([
+            fetchReleaseJson("/release/current-round"),
+            fetchReleaseJson("/release/current-leg"),
+            fetchReleaseJson("/release/round-settlement"),
+            fetchReleaseJson("/release/recent-settled-rounds?limit=5"),
+            activeHandle ? fetchReleaseJson(`/release/player-eligibility?handle=${encodeURIComponent(activeHandle)}`) : Promise.resolve(null)
+          ]);
+
+          const round = currentRoundPayload?.round || null;
+          const leg = currentLegPayload?.leg || null;
+          const settlement = settlementPayload?.settlement || null;
+          const recentRounds = Array.isArray(recentRoundsPayload?.rounds) ? recentRoundsPayload.rounds : [];
+          const eligibility = eligibilityPayload?.eligibility || null;
+
+          setReleaseText(menuCurrentRoundText, `Round ${round?.id ?? "--"} · blocks ${formatBlockRange(round?.blockStart, round?.blockEnd)}`, "#dcefff");
+          setReleaseText(menuRoundCountdownText, `Round countdown: ${formatBlocksRemaining(round?.blocksRemaining)}`, "#dcefff");
+          setReleaseText(menuCurrentLegText, `Leg ${leg?.id ?? "--"} · blocks ${formatBlockRange(leg?.blockStart, leg?.blockEnd)}`, "#dcefff");
+          setReleaseText(menuLegCountdownText, `Leg countdown: ${formatBlocksRemaining(leg?.blocksRemaining)}`, "#dcefff");
+          setReleaseText(menuRewardSummaryText, summarizeDistribution(settlement), "#dcefff");
+
+          if (eligibility) {
+            const eligibilityLabel = eligibility.eligible
+              ? `Eligibility: eligible for current leg ${eligibility.legId}`
+              : `Eligibility: blocked in leg ${eligibility.legId} (resolve obligations)`;
+            setReleaseText(menuEligibilityText, eligibilityLabel, eligibility.eligible ? "#65f5a8" : "#ffc857");
+          }
+
+          setRecentSettledStatus(`Loaded ${recentRounds.length} settled rounds`, "#65f5a8");
+          renderRecentSettledRounds(recentRounds);
+        } catch {
+          setReleaseText(menuCurrentRoundText, "Round: relay offline", "#ffb0b0");
+          setReleaseText(menuRoundCountdownText, "Round countdown: unavailable", "#ffb0b0");
+          setReleaseText(menuCurrentLegText, "Leg: relay offline", "#ffb0b0");
+          setReleaseText(menuLegCountdownText, "Leg countdown: unavailable", "#ffb0b0");
+          setReleaseText(menuRewardSummaryText, "Reward distribution: unavailable", "#ffb0b0");
+          if (activeHandle) {
+            setReleaseText(menuEligibilityText, `Eligibility: unavailable for ${activeHandle}`, "#ffb0b0");
+          }
+          setRecentSettledStatus("Recent settlements unavailable (relay offline)", "#ffb0b0");
+          renderRecentSettledRounds([]);
+        }
       }
 
-      async function loadLatestHourlyWinner() {
-        setLatestHourlyPrizeText("Latest hourly winner temporarily disabled in MVP.", "#a6c6dd");
+      async function loadGameOverReleaseSummary() {
+        setReleaseText(gameOverPlacementText, "Current round placement: loading...", "#9cc8e2");
+        setReleaseText(gameOverOutcomeText, "Reward/liability outcome: loading...", "#9cc8e2");
+        setReleaseText(gameOverObligationsText, "Outstanding obligations: loading...", "#9cc8e2");
+        setReleaseText(gameOverBlockedText, "Eligibility gate: loading...", "#9cc8e2");
+        setReleaseText(gameOverLegResetText, "Next leg reset in blocks: loading...", "#9cc8e2");
+
+        const handle = getActiveHandleForRelease();
+
+        try {
+          const [currentRoundPayload, currentLegPayload, standingsPayload, settlementPayload, obligationsPayload, eligibilityPayload] = await Promise.all([
+            fetchReleaseJson("/release/current-round"),
+            fetchReleaseJson("/release/current-leg"),
+            fetchReleaseJson("/release/current-standings"),
+            fetchReleaseJson("/release/round-settlement"),
+            handle ? fetchReleaseJson(`/release/player-obligations?handle=${encodeURIComponent(handle)}`) : Promise.resolve(null),
+            handle ? fetchReleaseJson(`/release/player-eligibility?handle=${encodeURIComponent(handle)}`) : Promise.resolve(null)
+          ]);
+
+          const currentLeg = currentLegPayload?.leg || null;
+          const standingsEntries = Array.isArray(standingsPayload?.standings?.entries) ? standingsPayload.standings.entries : [];
+          const playerPlacement = handle ? standingsEntries.find((entry) => entry.handle === handle) : null;
+          const settlement = settlementPayload?.settlement || null;
+          const obligations = obligationsPayload?.obligations || null;
+          const eligibility = eligibilityPayload?.eligibility || null;
+
+          if (handle && playerPlacement) {
+            setReleaseText(gameOverPlacementText, `Current round placement: #${playerPlacement.rank} (${playerPlacement.handle})`, "#dcefff");
+          } else if (handle) {
+            setReleaseText(gameOverPlacementText, `Current round placement: ${handle} not in top standings`, "#a6c6dd");
+          } else {
+            setReleaseText(gameOverPlacementText, "Current round placement: register a handle to track placement", "#a6c6dd");
+          }
+
+          if (handle && settlement) {
+            const winnerEntry = Array.isArray(settlement.winners) ? settlement.winners.find((entry) => entry.handle === handle) : null;
+            const liabilityEntry = Array.isArray(settlement.liabilities) ? settlement.liabilities.find((entry) => entry.handle === handle) : null;
+            if (winnerEntry) {
+              setReleaseText(gameOverOutcomeText, `Reward/liability outcome: reward +${winnerEntry.amount} at rank #${winnerEntry.rank}`, "#65f5a8");
+            } else if (liabilityEntry) {
+              setReleaseText(gameOverOutcomeText, `Reward/liability outcome: liability ${liabilityEntry.amount} at rank #${liabilityEntry.rank}`, "#ffc857");
+            } else {
+              setReleaseText(gameOverOutcomeText, "Reward/liability outcome: no direct settlement entry", "#a6c6dd");
+            }
+          } else {
+            setReleaseText(gameOverOutcomeText, "Reward/liability outcome: unavailable", "#a6c6dd");
+          }
+
+          const outstanding = Array.isArray(obligations?.outstanding) ? obligations.outstanding : [];
+          if (!handle) {
+            setReleaseText(gameOverObligationsText, "Outstanding obligations: register a handle to view obligations", "#a6c6dd");
+          } else if (!outstanding.length) {
+            setReleaseText(gameOverObligationsText, "Outstanding obligations: none", "#65f5a8");
+          } else {
+            const outstandingTotal = outstanding.reduce((sum, row) => sum + Math.max(0, (Number(row.amountDue) || 0) - (Number(row.amountPaid) || 0)), 0);
+            setReleaseText(gameOverObligationsText, `Outstanding obligations: ${outstanding.length} due · total ${outstandingTotal}`, "#ffc857");
+          }
+
+          if (eligibility) {
+            if (eligibility.eligible) {
+              setReleaseText(gameOverBlockedText, "Eligibility gate: eligible for next run", "#65f5a8");
+            } else {
+              setReleaseText(gameOverBlockedText, "Eligibility gate: blocked until leg end (unpaid/blocked status active)", "#ffb0b0");
+            }
+          } else {
+            setReleaseText(gameOverBlockedText, "Eligibility gate: unavailable", "#a6c6dd");
+          }
+
+          setReleaseText(gameOverLegResetText, `Next leg reset in blocks: ${formatBlocksRemaining(currentLeg?.blocksRemaining)}`, "#dcefff");
+        } catch {
+          setReleaseText(gameOverPlacementText, "Current round placement: unavailable", "#ffb0b0");
+          setReleaseText(gameOverOutcomeText, "Reward/liability outcome: unavailable", "#ffb0b0");
+          setReleaseText(gameOverObligationsText, "Outstanding obligations: unavailable", "#ffb0b0");
+          setReleaseText(gameOverBlockedText, "Eligibility gate: unavailable", "#ffb0b0");
+          setReleaseText(gameOverLegResetText, "Next leg reset in blocks: unavailable", "#ffb0b0");
+        }
       }
 
       function applyPlayerStatus(player) {
@@ -2342,9 +2409,7 @@
         fadeOverlay.style.background = "rgba(0,0,0,0)";
         shipRoot.visible = true;
         setEngineAudioLevel(0);
-        loadHourlyPrizeWindowStatus();
-        loadMenuPotStatus();
-        loadRecentWinners();
+        loadReleaseOverview();
       }
 
       function startGame() {
@@ -2380,8 +2445,7 @@
         const lockIndicator = document.getElementById("handleLockIndicator");
         if (lockIndicator) lockIndicator.style.display = lockedHandle ? "block" : "none";
         loadChainLeaderboard();
-        loadLatestHourlyWinner();
-        loadHourlyPrizeWindowStatus();
+        loadGameOverReleaseSummary();
         refreshPlayerStatus();
         loadFeaturedRankContext();
       }
@@ -2485,32 +2549,6 @@
         registerChainPlayerBtn.addEventListener("click", () => registerPlayerForChain());
         submitChainScoreBtn.addEventListener("click", () => submitScoreToChain());
 
-        copyPotAddressBtn.addEventListener("click", async () => {
-          const addressValue = menuPotAddressInput.value || "";
-          if (!addressValue || addressValue === "--" || addressValue === "Unavailable" || addressValue === "Loading address...") {
-            return;
-          }
-
-          try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              await navigator.clipboard.writeText(addressValue);
-            } else {
-              menuPotAddressInput.focus();
-              menuPotAddressInput.select();
-              document.execCommand("copy");
-              menuPotAddressInput.setSelectionRange(0, 0);
-              menuPotAddressInput.blur();
-            }
-            copyPotAddressBtn.textContent = "Copied";
-            window.setTimeout(() => {
-              copyPotAddressBtn.textContent = "Copy";
-            }, 900);
-          } catch {
-            menuPotAddressInput.focus();
-            menuPotAddressInput.select();
-          }
-        });
-
         playerInitialsInput.addEventListener("input", () => {
           playerInitialsInput.value = sanitizeHandle(playerInitialsInput.value);
           if (!lockedHandle) {
@@ -2521,6 +2559,7 @@
             if (lockIndicator) lockIndicator.style.display = "none";
             updateSubmitButtonState();
             loadFeaturedRankContext();
+            loadReleaseOverview();
           } else {
             playerInitialsInput.value = lockedHandle;
           }

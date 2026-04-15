@@ -52,17 +52,16 @@ const PRIZE_PREFIX = `${GAME_PREFIX}prizes/`;
 const RECORD_ENVELOPE_VERSION = 2;
 const RECORD_ENVELOPE_ALGORITHM = "sha256";
 const FEATURED_LEADERBOARD_DIFFICULTY = "normal";
-const PRIZE_WINDOW_BLOCK_SIZES = Object.freeze({
-  hourly: 120,
-  daily: 2880,
-  weekly: 20160
-});
-
-const prizeTypeKeys = Object.freeze({
-  hourly: true,
-  daily: true,
-  weekly: true
-});
+const RELEASE_PREFIX = `${GAME_PREFIX}release/v1/`;
+const RELEASE_SCHEMA_VERSION = 1;
+const RELEASE_ROUND_BLOCK_SIZE = 120;
+const RELEASE_LEG_BLOCK_SIZE = 1440;
+const RELEASE_ROUNDS_PER_LEG = 12;
+const RELEASE_PAYOUTS = Object.freeze([100, 70, 20, 10]);
+const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);
+const RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS = 10;
+const RELEASE_RECENT_SETTLED_DEFAULT_LIMIT = 5;
+const RELEASE_RECENT_SETTLED_MAX_LIMIT = 20;
 
 const integrityModeKeys = Object.freeze({
   strict: true,
@@ -286,14 +285,6 @@ function sanitizeDifficulty(difficulty) {
   return Object.prototype.hasOwnProperty.call(difficultyKeys, difficulty) ? difficulty : null;
 }
 
-function sanitizePrizeType(prizeType) {
-  return Object.prototype.hasOwnProperty.call(prizeTypeKeys, prizeType) ? prizeType : null;
-}
-
-function getPrizeWindowSize(prizeType) {
-  return PRIZE_WINDOW_BLOCK_SIZES[prizeType] || null;
-}
-
 function sanitizeHandle(rawHandle) {
   if (typeof rawHandle !== "string") return null;
   const normalizedHandle = rawHandle.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "");
@@ -316,12 +307,6 @@ function sanitizeScore(rawScore) {
   return Math.round(parsedScore * 1000) / 1000;
 }
 
-function sanitizePrizeIndex(rawIndex) {
-  const parsedIndex = Number(rawIndex);
-  if (!Number.isInteger(parsedIndex) || parsedIndex < 0) return null;
-  return parsedIndex;
-}
-
 function sanitizeBlockHeight(rawHeight) {
   const parsedHeight = Number(rawHeight);
   if (!Number.isInteger(parsedHeight) || parsedHeight < 0) return null;
@@ -342,108 +327,142 @@ function sanitizeTxid(rawTxid) {
   return trimmedTxid;
 }
 
-function getPrizeRecordName(prizeType, prizeIndex) {
-  return `${PRIZE_PREFIX}${prizeType}/${prizeIndex}`;
+function sanitizeNonNegativeInteger(rawValue) {
+  const parsedValue = Number(rawValue);
+  if (!Number.isInteger(parsedValue) || parsedValue < 0) return null;
+  return parsedValue;
 }
 
-function getPrizeLatestPointerName(prizeType) {
-  return `${PRIZE_PREFIX}${prizeType}/latest`;
+function getCurrentRoundName() {
+  return `${RELEASE_PREFIX}current/round`;
 }
 
-function parsePrizeRecordValue(value, expectedType, expectedIndex) {
-  if (typeof value !== "string" || value.length === 0) return null;
+function getCurrentLegName() {
+  return `${RELEASE_PREFIX}current/leg`;
+}
 
+function getRoundStandingsName(roundId) {
+  return `${RELEASE_PREFIX}rounds/${roundId}/standings`;
+}
+
+function getRoundSettlementName(roundId) {
+  return `${RELEASE_PREFIX}rounds/${roundId}/settlement`;
+}
+
+function getPlayerLegStatusName(legId, handle) {
+  return `${RELEASE_PREFIX}legs/${legId}/players/${handle}/status`;
+}
+
+function getPaymentReceiptName(roundId, handle) {
+  return `${RELEASE_PREFIX}rounds/${roundId}/payments/${handle}`;
+}
+
+function getRoundIdFromBlockHeight(blockHeight) {
+  return Math.floor(blockHeight / RELEASE_ROUND_BLOCK_SIZE);
+}
+
+function getLegIdFromBlockHeight(blockHeight) {
+  return Math.floor(blockHeight / RELEASE_LEG_BLOCK_SIZE);
+}
+
+function getRoundBlockRange(roundId) {
+  const blockStart = roundId * RELEASE_ROUND_BLOCK_SIZE;
+  return {
+    blockStart,
+    blockEnd: blockStart + RELEASE_ROUND_BLOCK_SIZE - 1
+  };
+}
+
+function getLegBlockRange(legId) {
+  const blockStart = legId * RELEASE_LEG_BLOCK_SIZE;
+  return {
+    blockStart,
+    blockEnd: blockStart + RELEASE_LEG_BLOCK_SIZE - 1
+  };
+}
+
+function parseRoundStandingsValue(value, expectedRoundId) {
+  if (typeof value !== "string" || !value) return null;
   let parsedValue;
   try {
     parsedValue = JSON.parse(value);
   } catch {
     return null;
   }
-
   if (!parsedValue || typeof parsedValue !== "object") return null;
+  if (parsedValue.version !== RELEASE_SCHEMA_VERSION || parsedValue.game !== "voidrunner3d") return null;
+  const roundId = sanitizeNonNegativeInteger(parsedValue.roundId);
+  if (roundId === null || roundId !== expectedRoundId) return null;
+  if (parsedValue.difficulty !== FEATURED_LEADERBOARD_DIFFICULTY) return null;
+  if (!Array.isArray(parsedValue.entries)) return null;
+  return parsedValue;
+}
 
-  const version = Number(parsedValue.version);
-  if (!Number.isInteger(version) || version < 1) return null;
+function serializeRoundStandingsValue(standingsPayload) {
+  return JSON.stringify(standingsPayload);
+}
 
-  const prizeType = sanitizePrizeType(String(parsedValue.type || "").toLowerCase());
-  if (!prizeType || prizeType !== expectedType) return null;
-
-  const prizeIndex = sanitizePrizeIndex(parsedValue.index);
-  if (prizeIndex === null || prizeIndex !== expectedIndex) return null;
-
-  const winnerHandle = sanitizeHandle(parsedValue.winner);
-  const score = sanitizeScore(parsedValue.score);
-  const difficulty = sanitizeDifficulty(String(parsedValue.difficulty || "").toLowerCase());
-  const blockStart = sanitizeBlockHeight(parsedValue.blockStart);
-  const blockEnd = sanitizeBlockHeight(parsedValue.blockEnd);
-  const paid = typeof parsedValue.paid === "boolean" ? parsedValue.paid : null;
-  const paidAtHeight = parsedValue.paidAtHeight === null || parsedValue.paidAtHeight === undefined
-    ? null
-    : sanitizeBlockHeight(parsedValue.paidAtHeight);
-  const timestamp = sanitizeTimestampMs(parsedValue.timestamp);
-  const txid = parsedValue.txid === null || parsedValue.txid === undefined ? null : sanitizeTxid(parsedValue.txid);
-
-  if (!winnerHandle || score === null || !difficulty || blockStart === null || blockEnd === null || paid === null || timestamp === null) {
+function parseRoundSettlementValue(value, expectedRoundId) {
+  if (typeof value !== "string" || !value) return null;
+  let parsedValue;
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
     return null;
   }
-
-  if (blockEnd < blockStart) return null;
-  if (paidAtHeight !== null && paidAtHeight < blockEnd) return null;
-  if (paid && !txid) return null;
-
-  return {
-    version,
-    type: prizeType,
-    index: prizeIndex,
-    winner: winnerHandle,
-    score,
-    difficulty,
-    blockStart,
-    blockEnd,
-    paid,
-    txid,
-    paidAtHeight,
-    timestamp
-  };
+  if (!parsedValue || typeof parsedValue !== "object") return null;
+  if (parsedValue.version !== RELEASE_SCHEMA_VERSION || parsedValue.game !== "voidrunner3d") return null;
+  const roundId = sanitizeNonNegativeInteger(parsedValue.roundId);
+  if (roundId === null || roundId !== expectedRoundId) return null;
+  if (typeof parsedValue.status !== "string") return null;
+  return parsedValue;
 }
 
-function serializePrizeRecordValue(prizeRecord) {
-  return JSON.stringify({
-    version: prizeRecord.version,
-    type: prizeRecord.type,
-    index: prizeRecord.index,
-    winner: prizeRecord.winner,
-    score: prizeRecord.score,
-    difficulty: prizeRecord.difficulty,
-    blockStart: prizeRecord.blockStart,
-    blockEnd: prizeRecord.blockEnd,
-    paid: prizeRecord.paid,
-    txid: prizeRecord.txid,
-    paidAtHeight: prizeRecord.paidAtHeight,
-    timestamp: prizeRecord.timestamp
-  });
+function serializeRoundSettlementValue(settlementPayload) {
+  return JSON.stringify(settlementPayload);
 }
 
-function normalizePrizeRecordInput(parsedBody) {
-  if (!parsedBody || typeof parsedBody !== "object") return null;
-  const prizeType = sanitizePrizeType(String(parsedBody.type || "").toLowerCase());
-  const prizeIndex = sanitizePrizeIndex(parsedBody.index);
-  if (!prizeType || prizeIndex === null) return null;
+function parsePlayerLegStatusValue(value, expectedLegId, expectedHandle) {
+  if (typeof value !== "string" || !value) return null;
+  let parsedValue;
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!parsedValue || typeof parsedValue !== "object") return null;
+  if (parsedValue.version !== RELEASE_SCHEMA_VERSION || parsedValue.game !== "voidrunner3d") return null;
+  const legId = sanitizeNonNegativeInteger(parsedValue.legId);
+  if (legId === null || legId !== expectedLegId) return null;
+  const handle = sanitizeHandle(parsedValue.handle);
+  if (!handle || handle !== expectedHandle) return null;
+  if (!Array.isArray(parsedValue.outstanding)) return null;
+  return parsedValue;
+}
 
-  return parsePrizeRecordValue(JSON.stringify({
-    version: parsedBody.version,
-    type: prizeType,
-    index: prizeIndex,
-    winner: parsedBody.winner,
-    score: parsedBody.score,
-    difficulty: parsedBody.difficulty,
-    blockStart: parsedBody.blockStart,
-    blockEnd: parsedBody.blockEnd,
-    paid: parsedBody.paid,
-    txid: parsedBody.txid,
-    paidAtHeight: parsedBody.paidAtHeight,
-    timestamp: parsedBody.timestamp
-  }), prizeType, prizeIndex);
+function serializePlayerLegStatusValue(playerLegStatusPayload) {
+  return JSON.stringify(playerLegStatusPayload);
+}
+
+function parsePaymentReceiptValue(value, expectedRoundId, expectedHandle) {
+  if (typeof value !== "string" || !value) return null;
+  let parsedValue;
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!parsedValue || typeof parsedValue !== "object") return null;
+  if (parsedValue.version !== RELEASE_SCHEMA_VERSION || parsedValue.game !== "voidrunner3d") return null;
+  const roundId = sanitizeNonNegativeInteger(parsedValue.roundId);
+  if (roundId === null || roundId !== expectedRoundId) return null;
+  const handle = sanitizeHandle(parsedValue.handle);
+  if (!handle || handle !== expectedHandle) return null;
+  return parsedValue;
+}
+
+function serializePaymentReceiptValue(paymentReceiptPayload) {
+  return JSON.stringify(paymentReceiptPayload);
 }
 
 function parseRecordValue(value, expectedHandle) {
@@ -779,7 +798,8 @@ function collectLeaderboardCandidates(scannedRows, difficulty) {
 
   candidateEntries.sort((leftEntry, rightEntry) => {
     if (rightEntry.score !== leftEntry.score) return rightEntry.score - leftEntry.score;
-    return rightEntry.updatedAt - leftEntry.updatedAt;
+    if (leftEntry.updatedAt !== rightEntry.updatedAt) return leftEntry.updatedAt - rightEntry.updatedAt;
+    return leftEntry.handle.localeCompare(rightEntry.handle);
   });
 
   return candidateEntries;
@@ -852,70 +872,293 @@ function buildLeaderboardRankPayload({ handle, difficulty, leaderboardCandidates
   };
 }
 
-async function writePrizeRecord(prizeRecord) {
-  const recordName = getPrizeRecordName(prizeRecord.type, prizeRecord.index);
-  const recordValue = serializePrizeRecordValue(prizeRecord);
-  await ensureNameRegistered(recordName, recordValue);
-  await callRpc("name_update", [recordName, recordValue]);
+async function upsertChainJsonRecord(name, serializedValue) {
+  await ensureNameRegistered(name, serializedValue);
+  await callRpc("name_update", [name, serializedValue]);
+}
 
-  const latestPointerName = getPrizeLatestPointerName(prizeRecord.type);
-  const latestPointerValue = JSON.stringify({ index: prizeRecord.index, updatedAt: Date.now() });
-  await ensureNameRegistered(latestPointerName, latestPointerValue);
-  await callRpc("name_update", [latestPointerName, latestPointerValue]);
-
-  return {
-    recordName,
-    latestPointerName
+async function readPlayerLegStatus(handle, legId) {
+  const statusName = getPlayerLegStatusName(legId, handle);
+  const statusState = await readName(statusName);
+  if (!statusState.exists) {
+    return {
+      version: RELEASE_SCHEMA_VERSION,
+      game: "voidrunner3d",
+      legId,
+      handle,
+      unpaid: false,
+      blockedUntilLegEnd: false,
+      outstanding: []
+    };
+  }
+  return parsePlayerLegStatusValue(statusState.value, legId, handle) || {
+    version: RELEASE_SCHEMA_VERSION,
+    game: "voidrunner3d",
+    legId,
+    handle,
+    unpaid: false,
+    blockedUntilLegEnd: false,
+    outstanding: []
   };
 }
 
-async function readLatestPrizeRecordByType(prizeType) {
-  const latestPointerState = await readName(getPrizeLatestPointerName(prizeType));
-  if (latestPointerState.exists) {
-    try {
-      const pointerBody = JSON.parse(latestPointerState.value);
-      const pointedIndex = sanitizePrizeIndex(pointerBody?.index);
-      if (pointedIndex !== null) {
-        const pointedRecordState = await readName(getPrizeRecordName(prizeType, pointedIndex));
-        if (pointedRecordState.exists) {
-          const pointedRecord = parsePrizeRecordValue(pointedRecordState.value, prizeType, pointedIndex);
-          if (pointedRecord) {
-            return {
-              strategy: "pointer",
-              prize: pointedRecord
-            };
-          }
-        }
-      }
-    } catch {
-      // Fallback to scan strategy below.
+async function buildRoundStandingsPayload(roundId, currentBlockHeight) {
+  const roundRange = getRoundBlockRange(roundId);
+  const legId = getLegIdFromBlockHeight(roundRange.blockStart);
+  const leaderboardCandidates = await getLeaderboardCandidatesForDifficulty(FEATURED_LEADERBOARD_DIFFICULTY);
+  const statusByHandle = new Map();
+  const eligibleCandidates = [];
+
+  for (const candidateEntry of leaderboardCandidates) {
+    const playerStatus = await readPlayerLegStatus(candidateEntry.handle, legId);
+    statusByHandle.set(candidateEntry.handle, playerStatus);
+    if (!playerStatus.blockedUntilLegEnd) {
+      eligibleCandidates.push(candidateEntry);
     }
   }
 
-  const scannedRows = await scanRecordNamesByPrefix(`${PRIZE_PREFIX}${prizeType}/`);
-  let latestPrize = null;
+  const rankedEntries = eligibleCandidates.slice(0, MAX_ENTRIES).map((candidateEntry, index) => ({
+    rank: index + 1,
+    handle: candidateEntry.handle,
+    score: candidateEntry.score,
+    updatedAt: candidateEntry.updatedAt
+  }));
+
+  return {
+    standingsPayload: {
+      version: RELEASE_SCHEMA_VERSION,
+      game: "voidrunner3d",
+      roundId,
+      legId,
+      roundStart: roundRange.blockStart,
+      roundEnd: roundRange.blockEnd,
+      difficulty: FEATURED_LEADERBOARD_DIFFICULTY,
+      generatedAtBlock: currentBlockHeight,
+      entries: rankedEntries
+    },
+    legId,
+    statusByHandle
+  };
+}
+
+function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
+  const topEntries = standingsPayload.entries;
+  if (topEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+    return {
+      version: RELEASE_SCHEMA_VERSION,
+      game: "voidrunner3d",
+      roundId: standingsPayload.roundId,
+      legId: standingsPayload.legId,
+      roundStart: standingsPayload.roundStart,
+      roundEnd: standingsPayload.roundEnd,
+      status: "closed-no-settlement",
+      reason: "insufficient-qualified-participants",
+      qualifiedParticipants: topEntries.length,
+      minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
+      generatedAtBlock: currentBlockHeight,
+      winners: [],
+      liabilities: []
+    };
+  }
+
+  const winners = topEntries.slice(0, RELEASE_PAYOUTS.length).map((entry, index) => ({
+    rank: entry.rank,
+    handle: entry.handle,
+    score: entry.score,
+    amount: RELEASE_PAYOUTS[index]
+  }));
+  const liabilities = topEntries.slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length).map((entry, index) => ({
+    rank: entry.rank,
+    handle: entry.handle,
+    score: entry.score,
+    amount: RELEASE_LIABILITIES[index],
+    amountPaid: 0,
+    status: "due"
+  }));
+
+  return {
+    version: RELEASE_SCHEMA_VERSION,
+    game: "voidrunner3d",
+    roundId: standingsPayload.roundId,
+    legId: standingsPayload.legId,
+    roundStart: standingsPayload.roundStart,
+    roundEnd: standingsPayload.roundEnd,
+    status: "settled",
+    reason: null,
+    qualifiedParticipants: topEntries.length,
+    minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
+    generatedAtBlock: currentBlockHeight,
+    winners,
+    liabilities
+  };
+}
+
+async function ensureRoundFinalized(roundId, currentBlockHeight) {
+  const roundRange = getRoundBlockRange(roundId);
+  if (currentBlockHeight <= roundRange.blockEnd) {
+    return null;
+  }
+
+  const settlementName = getRoundSettlementName(roundId);
+  const existingSettlementState = await readName(settlementName);
+  if (existingSettlementState.exists) {
+    const parsedSettlement = parseRoundSettlementValue(existingSettlementState.value, roundId);
+    if (parsedSettlement) return parsedSettlement;
+  }
+
+  const { standingsPayload, legId } = await buildRoundStandingsPayload(roundId, currentBlockHeight);
+  await upsertChainJsonRecord(getRoundStandingsName(roundId), serializeRoundStandingsValue(standingsPayload));
+
+  const settlementPayload = buildSettlementFromStandings(standingsPayload, currentBlockHeight);
+  await upsertChainJsonRecord(settlementName, serializeRoundSettlementValue(settlementPayload));
+
+  if (settlementPayload.status === "settled") {
+    for (const liabilityEntry of settlementPayload.liabilities) {
+      const currentPlayerLegStatus = await readPlayerLegStatus(liabilityEntry.handle, legId);
+      const nextOutstanding = currentPlayerLegStatus.outstanding.filter((outstandingEntry) => outstandingEntry.roundId !== roundId);
+      nextOutstanding.push({
+        roundId,
+        amountDue: liabilityEntry.amount,
+        amountPaid: 0,
+        status: "due"
+      });
+      const nextPlayerLegStatus = {
+        version: RELEASE_SCHEMA_VERSION,
+        game: "voidrunner3d",
+        legId,
+        handle: liabilityEntry.handle,
+        unpaid: true,
+        blockedUntilLegEnd: true,
+        outstanding: nextOutstanding
+      };
+      await upsertChainJsonRecord(
+        getPlayerLegStatusName(legId, liabilityEntry.handle),
+        serializePlayerLegStatusValue(nextPlayerLegStatus)
+      );
+    }
+  }
+
+  return settlementPayload;
+}
+
+async function getCurrentRoundAndLegPayload(currentBlockHeight) {
+  const roundId = getRoundIdFromBlockHeight(currentBlockHeight);
+  const legId = getLegIdFromBlockHeight(currentBlockHeight);
+  const roundRange = getRoundBlockRange(roundId);
+  const legRange = getLegBlockRange(legId);
+
+  return {
+    round: {
+      id: roundId,
+      legId,
+      roundsPerLeg: RELEASE_ROUNDS_PER_LEG,
+      blockStart: roundRange.blockStart,
+      blockEnd: roundRange.blockEnd,
+      blocksRemaining: Math.max(0, roundRange.blockEnd - currentBlockHeight),
+      currentBlockHeight
+    },
+    leg: {
+      id: legId,
+      blockStart: legRange.blockStart,
+      blockEnd: legRange.blockEnd,
+      blocksRemaining: Math.max(0, legRange.blockEnd - currentBlockHeight),
+      currentBlockHeight
+    }
+  };
+}
+
+async function ensureCurrentRoundAndLegPointers(currentBlockHeight) {
+  const currentPayload = await getCurrentRoundAndLegPayload(currentBlockHeight);
+  const currentRoundValue = JSON.stringify({
+    version: RELEASE_SCHEMA_VERSION,
+    game: "voidrunner3d",
+    ...currentPayload.round
+  });
+  const currentLegValue = JSON.stringify({
+    version: RELEASE_SCHEMA_VERSION,
+    game: "voidrunner3d",
+    ...currentPayload.leg
+  });
+  await upsertChainJsonRecord(getCurrentRoundName(), currentRoundValue);
+  await upsertChainJsonRecord(getCurrentLegName(), currentLegValue);
+  return currentPayload;
+}
+
+async function getCurrentStandingsPayload(currentBlockHeight) {
+  const roundId = getRoundIdFromBlockHeight(currentBlockHeight);
+  const roundStandingsName = getRoundStandingsName(roundId);
+  const roundStandingsState = await readName(roundStandingsName);
+  if (roundStandingsState.exists) {
+    const parsedStandings = parseRoundStandingsValue(roundStandingsState.value, roundId);
+    if (parsedStandings) return parsedStandings;
+  }
+  const { standingsPayload } = await buildRoundStandingsPayload(roundId, currentBlockHeight);
+  return standingsPayload;
+}
+
+async function getRoundSettlementPayload(roundId, currentBlockHeight) {
+  await ensureRoundFinalized(roundId, currentBlockHeight);
+  const settlementState = await readName(getRoundSettlementName(roundId));
+  if (!settlementState.exists) return null;
+  return parseRoundSettlementValue(settlementState.value, roundId);
+}
+
+async function getPlayerEligibilityPayload(handle, currentBlockHeight) {
+  const legId = getLegIdFromBlockHeight(currentBlockHeight);
+  const playerStatus = await readPlayerStatus(handle);
+  const playerLegStatus = await readPlayerLegStatus(handle, legId);
+  const eligible = playerStatus.canSubmit && !playerLegStatus.blockedUntilLegEnd;
+
+  return {
+    handle,
+    legId,
+    difficulty: FEATURED_LEADERBOARD_DIFFICULTY,
+    eligible,
+    reasons: {
+      identityRegistered: playerStatus.identityRegistered,
+      recordRegistered: playerStatus.recordRegistered,
+      blockedUntilLegEnd: playerLegStatus.blockedUntilLegEnd,
+      unpaid: playerLegStatus.unpaid
+    }
+  };
+}
+
+async function getPlayerOutstandingObligationsPayload(handle, currentBlockHeight) {
+  const legId = getLegIdFromBlockHeight(currentBlockHeight);
+  const playerLegStatus = await readPlayerLegStatus(handle, legId);
+  return {
+    handle,
+    legId,
+    unpaid: playerLegStatus.unpaid,
+    blockedUntilLegEnd: playerLegStatus.blockedUntilLegEnd,
+    outstanding: playerLegStatus.outstanding
+  };
+}
+
+async function getRecentSettledRoundsPayload(currentBlockHeight, limit) {
+  const currentRoundId = getRoundIdFromBlockHeight(currentBlockHeight);
+  if (currentRoundId > 0) {
+    await ensureRoundFinalized(currentRoundId - 1, currentBlockHeight);
+  }
+
+  const scannedRows = await scanRecordNamesByPrefix(`${RELEASE_PREFIX}rounds/`);
+  const settlements = [];
 
   for (const row of scannedRows) {
     const onChainName = typeof row?.name === "string" ? row.name : "";
     const onChainValue = typeof row?.value === "string" ? row.value : "";
-    if (onChainName === getPrizeLatestPointerName(prizeType)) continue;
-
-    const indexText = onChainName.slice(`${PRIZE_PREFIX}${prizeType}/`.length);
-    const index = sanitizePrizeIndex(indexText);
-    if (index === null) continue;
-
-    const parsedPrize = parsePrizeRecordValue(onChainValue, prizeType, index);
-    if (!parsedPrize) continue;
-
-    if (!latestPrize || parsedPrize.index > latestPrize.index) {
-      latestPrize = parsedPrize;
-    }
+    if (!onChainName.endsWith("/settlement")) continue;
+    const match = onChainName.match(/\/rounds\/(\d+)\/settlement$/);
+    if (!match) continue;
+    const roundId = sanitizeNonNegativeInteger(match[1]);
+    if (roundId === null) continue;
+    const parsedSettlement = parseRoundSettlementValue(onChainValue, roundId);
+    if (!parsedSettlement) continue;
+    settlements.push(parsedSettlement);
   }
 
-  return {
-    strategy: "scan-max-index",
-    prize: latestPrize
-  };
+  settlements.sort((leftSettlement, rightSettlement) => rightSettlement.roundId - leftSettlement.roundId);
+  return settlements.slice(0, limit);
 }
 
 function toApiPlayerStatus(status) {
@@ -937,6 +1180,7 @@ function toApiPlayerStatus(status) {
     identityRegistered: status.identityRegistered,
     recordRegistered: status.recordRegistered,
     canSubmit: status.canSubmit,
+    release: status.release || null,
     scores
   };
 }
@@ -1010,7 +1254,17 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      const playerStatus = await readPlayerStatus(handle);
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const [playerStatus, playerEligibility, playerObligations] = await Promise.all([
+        readPlayerStatus(handle),
+        getPlayerEligibilityPayload(handle, currentBlockHeight),
+        getPlayerOutstandingObligationsPayload(handle, currentBlockHeight)
+      ]);
+      playerStatus.release = {
+        currentLegId: playerEligibility.legId,
+        eligibility: playerEligibility,
+        obligations: playerObligations
+      };
       sendJson(response, 200, {
         ok: true,
         player: toApiPlayerStatus(playerStatus)
@@ -1114,53 +1368,78 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === "GET" && requestUrl.pathname === "/api/prizes/latest") {
-      const prizeType = sanitizePrizeType(String(requestUrl.searchParams.get("type") || "").toLowerCase());
-      if (!prizeType) {
-        sendJson(response, 400, { ok: false, error: "Invalid prize type" });
-        return;
-      }
-
-      const latestPrizeResult = await readLatestPrizeRecordByType(prizeType);
-      if (!latestPrizeResult.prize) {
-        sendJson(response, 404, {
-          ok: false,
-          error: "No prize record found",
-          type: prizeType,
-          strategy: latestPrizeResult.strategy
-        });
-        return;
-      }
-
-      sendJson(response, 200, {
-        ok: true,
-        type: prizeType,
-        roundType: prizeType,
-        strategy: latestPrizeResult.strategy,
-        prize: latestPrizeResult.prize
-      });
+    if (request.method === "GET" && requestUrl.pathname === "/api/release/current-round") {
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const currentPayload = await ensureCurrentRoundAndLegPointers(currentBlockHeight);
+      sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, round: currentPayload.round });
       return;
     }
 
-    if (request.method === "GET" && requestUrl.pathname === "/api/prize-window/status") {
-      const prizeType = sanitizePrizeType(String(requestUrl.searchParams.get("type") || "").toLowerCase());
-      if (!prizeType) {
-        sendJson(response, 400, { ok: false, error: "Invalid prize type" });
-        return;
-      }
-
+    if (request.method === "GET" && requestUrl.pathname === "/api/release/current-leg") {
       const currentBlockHeight = await getCurrentBlockHeight();
-      const prizeWindowStatus = buildPrizeWindowStatus(prizeType, currentBlockHeight);
-      if (!prizeWindowStatus) {
-        sendJson(response, 400, { ok: false, error: "Invalid prize type" });
+      const currentPayload = await ensureCurrentRoundAndLegPointers(currentBlockHeight);
+      sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, leg: currentPayload.leg });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/release/current-standings") {
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const standingsPayload = await getCurrentStandingsPayload(currentBlockHeight);
+      sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, standings: standingsPayload });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/release/round-settlement") {
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const queryRoundId = requestUrl.searchParams.get("roundId");
+      const roundId = queryRoundId === null
+        ? Math.max(0, getRoundIdFromBlockHeight(currentBlockHeight) - 1)
+        : sanitizeNonNegativeInteger(queryRoundId);
+      if (roundId === null) {
+        sendJson(response, 400, { ok: false, error: "Invalid roundId" });
         return;
       }
+      const settlementPayload = await getRoundSettlementPayload(roundId, currentBlockHeight);
+      if (!settlementPayload) {
+        sendJson(response, 404, { ok: false, error: "Round settlement not available", roundId });
+        return;
+      }
+      sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, settlement: settlementPayload });
+      return;
+    }
 
-      sendJson(response, 200, {
-        ok: true,
-        roundType: prizeWindowStatus.type,
-        ...prizeWindowStatus
-      });
+    if (request.method === "GET" && requestUrl.pathname === "/api/release/player-eligibility") {
+      const handle = sanitizeHandle(requestUrl.searchParams.get("handle") || "");
+      if (!handle) {
+        sendJson(response, 400, { ok: false, error: "Invalid handle" });
+        return;
+      }
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const eligibilityPayload = await getPlayerEligibilityPayload(handle, currentBlockHeight);
+      sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, eligibility: eligibilityPayload });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/release/player-obligations") {
+      const handle = sanitizeHandle(requestUrl.searchParams.get("handle") || "");
+      if (!handle) {
+        sendJson(response, 400, { ok: false, error: "Invalid handle" });
+        return;
+      }
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const obligationsPayload = await getPlayerOutstandingObligationsPayload(handle, currentBlockHeight);
+      sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, obligations: obligationsPayload });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/release/recent-settled-rounds") {
+      const currentBlockHeight = await getCurrentBlockHeight();
+      const requestedLimit = sanitizeNonNegativeInteger(requestUrl.searchParams.get("limit"));
+      const limit = requestedLimit === null || requestedLimit === 0
+        ? RELEASE_RECENT_SETTLED_DEFAULT_LIMIT
+        : Math.min(RELEASE_RECENT_SETTLED_MAX_LIMIT, requestedLimit);
+      const recentSettledRounds = await getRecentSettledRoundsPayload(currentBlockHeight, limit);
+      sendJson(response, 200, { ok: true, namespace: RELEASE_PREFIX, rounds: recentSettledRounds });
       return;
     }
 

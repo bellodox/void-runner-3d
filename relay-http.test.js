@@ -347,7 +347,7 @@ async function runTests() {
     assert("re-registering preserves record linkage", repeatRegisterResponse.body?.player?.recordName === "g/voidrunner3d/pilot01/record", JSON.stringify(repeatRegisterResponse.body));
   });
 
-  section("GET /api/player/status");
+  section("GET /api/player/status with release state");
   await withRelay({
     "p/pilot02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "pilot02", recordName: "g/voidrunner3d/pilot02/record" }),
     "g/voidrunner3d/pilot02/record": createRecordValue("pilot02", {
@@ -364,6 +364,7 @@ async function runTests() {
     assert("unregistered handle cannot submit", unregisteredStatusResponse.body?.player?.canSubmit === false, JSON.stringify(unregisteredStatusResponse.body));
     assert("unregistered handle still returns derived record name", unregisteredStatusResponse.body?.player?.recordName === "g/voidrunner3d/ghost01/record", JSON.stringify(unregisteredStatusResponse.body));
     assert("unregistered handle keeps requested handle in response", unregisteredStatusResponse.body?.player?.handle === "ghost01", JSON.stringify(unregisteredStatusResponse.body));
+    assert("unregistered handle includes release eligibility block", typeof unregisteredStatusResponse.body?.player?.release?.eligibility?.eligible === "boolean", JSON.stringify(unregisteredStatusResponse.body?.player?.release));
 
     const registeredStatusResponse = await request("GET", "/player/status?handle=pilot02");
     assert("registered handle status returns 200", registeredStatusResponse.status === 200, `got ${registeredStatusResponse.status}`);
@@ -372,6 +373,7 @@ async function runTests() {
     assert("registered handle can submit", registeredStatusResponse.body?.player?.canSubmit === true, JSON.stringify(registeredStatusResponse.body));
     assert("registered handle exposes linked record name", registeredStatusResponse.body?.player?.recordName === "g/voidrunner3d/pilot02/record", JSON.stringify(registeredStatusResponse.body));
     assert("registered handle exposes stored easy score", registeredStatusResponse.body?.player?.scores?.easy?.score === 18.5, JSON.stringify(registeredStatusResponse.body?.player?.scores));
+    assert("registered handle release state reports current leg id", Number.isInteger(registeredStatusResponse.body?.player?.release?.currentLegId), JSON.stringify(registeredStatusResponse.body?.player?.release));
   });
 
   section("POST /api/leaderboard/submit - validation and registration guard");
@@ -505,7 +507,7 @@ async function runTests() {
     assert("leaderboard safely ignores malformed or incomplete scanned records", !leaderboardResponse.body?.entries?.some((entry) => entry.handle === "badjson" || entry.handle === "mismatch" || entry.handle === "missing-score" || entry.handle === "tampered"), JSON.stringify(leaderboardResponse.body?.entries));
   });
 
-  section("GET /api/leaderboard/rank - featured normal rank context MVP");
+  section("GET /api/leaderboard/rank - featured normal rank context");
   await withRelay({
     "p/p00": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p00", recordName: "g/voidrunner3d/p00/record" }),
     "g/voidrunner3d/p00/record": createRecordValue("p00", { normal: { score: 40, updatedAt: 100 } }),
@@ -549,7 +551,7 @@ async function runTests() {
     assert("outside-top player gets delta to enter top list", outsideTopResponse.body?.deltas?.toTopList === 5, JSON.stringify(outsideTopResponse.body?.deltas));
   });
 
-  section("GET /api/leaderboard/rank - empty and unranked behavior MVP");
+  section("GET /api/leaderboard/rank - empty and unranked behavior");
   await withRelay({}, async () => {
     const emptyRankResponse = await request("GET", "/leaderboard/rank?handle=ghost01");
     assert("empty rank request returns 200", emptyRankResponse.status === 200, `got ${emptyRankResponse.status}`);
@@ -559,46 +561,16 @@ async function runTests() {
     assert("empty rank response keeps delta values null", emptyRankResponse.body?.deltas?.toLeader === null && emptyRankResponse.body?.deltas?.toNextRank === null && emptyRankResponse.body?.deltas?.toTopList === null, JSON.stringify(emptyRankResponse.body?.deltas));
   });
 
-  section("GET /api/prizes/latest - MVP round history (read-only public relay)");
+  section("legacy MVP economy endpoints removed from public relay");
   await withRelay({}, async () => {
-    const invalidTypeResponse = await request("GET", "/prizes/latest?type=monthly");
-    assert("invalid prize type returns 400", invalidTypeResponse.status === 400, `got ${invalidTypeResponse.status}`);
+    const legacyLatestResponse = await request("GET", "/prizes/latest?type=hourly");
+    assert("legacy /prizes/latest now returns 404", legacyLatestResponse.status === 404, `got ${legacyLatestResponse.status}`);
 
-    const missingPrizeResponse = await request("GET", "/prizes/latest?type=hourly");
-    assert("missing latest prize returns 404", missingPrizeResponse.status === 404, `got ${missingPrizeResponse.status}`);
-    assert("missing latest prize reports scan fallback strategy", missingPrizeResponse.body?.strategy === "scan-max-index", JSON.stringify(missingPrizeResponse.body));
+    const legacyWindowResponse = await request("GET", "/prize-window/status?type=hourly");
+    assert("legacy /prize-window/status now returns 404", legacyWindowResponse.status === 404, `got ${legacyWindowResponse.status}`);
 
-    const createRoundResponse = await request("POST", "/prizes", {
-      version: 1,
-      type: "hourly",
-      index: 0,
-      winner: "pilot01",
-      score: 20.5,
-      difficulty: "normal",
-      blockStart: 100,
-      blockEnd: 110,
-      paid: false,
-      txid: null,
-      paidAtHeight: null,
-      timestamp: 1710000000000
-    });
-    assert("public relay blocks admin round write route", createRoundResponse.status === 404, `got ${createRoundResponse.status}`);
-  });
-
-  section("GET /api/prize-window/status - block countdown MVP");
-  await withRelay({}, async () => {
-    const invalidPrizeTypeResponse = await request("GET", "/prize-window/status?type=monthly");
-    assert("invalid prize window type returns 400", invalidPrizeTypeResponse.status === 400, `got ${invalidPrizeTypeResponse.status}`);
-    assert("invalid prize window type returns explicit error", invalidPrizeTypeResponse.body?.error === "Invalid prize type", JSON.stringify(invalidPrizeTypeResponse.body));
-
-    const hourlyStatusResponse = await request("GET", "/prize-window/status?type=hourly");
-    assert("hourly prize window status returns 200", hourlyStatusResponse.status === 200, `got ${hourlyStatusResponse.status}`);
-    assert("hourly status echoes type", hourlyStatusResponse.body?.type === "hourly", JSON.stringify(hourlyStatusResponse.body));
-    assert("hourly status includes mocked current block height", hourlyStatusResponse.body?.currentBlockHeight === 12345, JSON.stringify(hourlyStatusResponse.body));
-    assert("hourly status window index is derived from block height", hourlyStatusResponse.body?.currentWindowIndex === 102, JSON.stringify(hourlyStatusResponse.body));
-    assert("hourly status window size is 120", hourlyStatusResponse.body?.windowSize === 120, JSON.stringify(hourlyStatusResponse.body));
-    assert("hourly status blocksRemaining is 14", hourlyStatusResponse.body?.blocksRemaining === 14, JSON.stringify(hourlyStatusResponse.body));
-    assert("hourly status percentComplete is rounded to 3 decimals", hourlyStatusResponse.body?.percentComplete === 88.333, JSON.stringify(hourlyStatusResponse.body));
+    const legacyWriteResponse = await request("POST", "/prizes", { type: "hourly" });
+    assert("legacy /prizes write route remains unavailable", legacyWriteResponse.status === 404, `got ${legacyWriteResponse.status}`);
   });
 
   section("GET /api/pot/status removed from public MVP relay");
@@ -607,42 +579,119 @@ async function runTests() {
     assert("public pot status endpoint returns 404", removedEndpointResponse.status === 404, `got ${removedEndpointResponse.status}`);
   });
 
-  section("GET /api/prizes/latest - scan fallback when latest pointer is stale");
+  section("release current round and current leg endpoints");
   await withRelay({
-    "g/voidrunner3d/prizes/daily/latest": JSON.stringify({ index: 99, updatedAt: 1710001000000 }),
-    "g/voidrunner3d/prizes/daily/3": JSON.stringify({
-      version: 1,
-      type: "daily",
-      index: 3,
-      winner: "pilot03",
-      score: 41,
-      difficulty: "easy",
-      blockStart: 200,
-      blockEnd: 220,
-      paid: false,
-      txid: null,
-      paidAtHeight: null,
-      timestamp: 1710000100000
-    }),
-    "g/voidrunner3d/prizes/daily/4": JSON.stringify({
-      version: 1,
-      type: "daily",
-      index: 4,
-      winner: "pilot04",
-      score: 51,
-      difficulty: "normal",
-      blockStart: 221,
-      blockEnd: 240,
-      paid: true,
-      txid: "tx-456",
-      paidAtHeight: 241,
-      timestamp: 1710000200000
+    "p/pilot01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "pilot01", recordName: "g/voidrunner3d/pilot01/record" }),
+    "g/voidrunner3d/pilot01/record": createRecordValue("pilot01", {
+      normal: { score: 25, updatedAt: 1000 }
     })
   }, async () => {
-    const fallbackReadResponse = await request("GET", "/prizes/latest?type=daily");
-    assert("scan fallback read returns 200", fallbackReadResponse.status === 200, `got ${fallbackReadResponse.status}`);
-    assert("scan fallback strategy is explicit", fallbackReadResponse.body?.strategy === "scan-max-index", JSON.stringify(fallbackReadResponse.body));
-    assert("scan fallback chooses highest prize index", fallbackReadResponse.body?.prize?.index === 4, JSON.stringify(fallbackReadResponse.body?.prize));
+    const currentRoundResponse = await request("GET", "/release/current-round");
+    assert("current round endpoint returns 200", currentRoundResponse.status === 200, `got ${currentRoundResponse.status}`);
+    assert("current round id derived from height", currentRoundResponse.body?.round?.id === 102, JSON.stringify(currentRoundResponse.body?.round));
+    assert("current round block start is deterministic", currentRoundResponse.body?.round?.blockStart === 12240, JSON.stringify(currentRoundResponse.body?.round));
+    assert("current round block end is deterministic", currentRoundResponse.body?.round?.blockEnd === 12359, JSON.stringify(currentRoundResponse.body?.round));
+
+    const currentLegResponse = await request("GET", "/release/current-leg");
+    assert("current leg endpoint returns 200", currentLegResponse.status === 200, `got ${currentLegResponse.status}`);
+    assert("current leg id derived from height", currentLegResponse.body?.leg?.id === 8, JSON.stringify(currentLegResponse.body?.leg));
+    assert("current leg block start is deterministic", currentLegResponse.body?.leg?.blockStart === 11520, JSON.stringify(currentLegResponse.body?.leg));
+    assert("current leg block end is deterministic", currentLegResponse.body?.leg?.blockEnd === 12959, JSON.stringify(currentLegResponse.body?.leg));
+  });
+
+  section("release round and leg boundary behavior");
+  await withRelay({}, async () => {
+    const currentRoundResponse = await request("GET", "/release/current-round");
+    const currentLegResponse = await request("GET", "/release/current-leg");
+
+    assert("current round reports blocksRemaining relative to current block", currentRoundResponse.body?.round?.blocksRemaining === 14, JSON.stringify(currentRoundResponse.body?.round));
+    assert("current leg reports blocksRemaining relative to current block", currentLegResponse.body?.leg?.blocksRemaining === 614, JSON.stringify(currentLegResponse.body?.leg));
+    assert("current round reports leg id aligned with current leg endpoint", currentRoundResponse.body?.round?.legId === currentLegResponse.body?.leg?.id, JSON.stringify({ round: currentRoundResponse.body?.round, leg: currentLegResponse.body?.leg }));
+  });
+
+  section("release standings, settlement, eligibility, obligations, and recent rounds");
+  await withRelay({
+    "p/p00": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p00", recordName: "g/voidrunner3d/p00/record" }),
+    "g/voidrunner3d/p00/record": createRecordValue("p00", { normal: { score: 50, updatedAt: 100 } }),
+    "p/p01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p01", recordName: "g/voidrunner3d/p01/record" }),
+    "g/voidrunner3d/p01/record": createRecordValue("p01", { normal: { score: 49, updatedAt: 101 } }),
+    "p/p02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p02", recordName: "g/voidrunner3d/p02/record" }),
+    "g/voidrunner3d/p02/record": createRecordValue("p02", { normal: { score: 48, updatedAt: 102 } }),
+    "p/p03": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p03", recordName: "g/voidrunner3d/p03/record" }),
+    "g/voidrunner3d/p03/record": createRecordValue("p03", { normal: { score: 47, updatedAt: 103 } }),
+    "p/p04": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p04", recordName: "g/voidrunner3d/p04/record" }),
+    "g/voidrunner3d/p04/record": createRecordValue("p04", { normal: { score: 46, updatedAt: 104 } }),
+    "p/p05": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p05", recordName: "g/voidrunner3d/p05/record" }),
+    "g/voidrunner3d/p05/record": createRecordValue("p05", { normal: { score: 45, updatedAt: 105 } }),
+    "p/p06": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p06", recordName: "g/voidrunner3d/p06/record" }),
+    "g/voidrunner3d/p06/record": createRecordValue("p06", { normal: { score: 44, updatedAt: 106 } }),
+    "p/p07": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p07", recordName: "g/voidrunner3d/p07/record" }),
+    "g/voidrunner3d/p07/record": createRecordValue("p07", { normal: { score: 43, updatedAt: 107 } }),
+    "p/p08": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p08", recordName: "g/voidrunner3d/p08/record" }),
+    "g/voidrunner3d/p08/record": createRecordValue("p08", { normal: { score: 42, updatedAt: 108 } }),
+    "p/p09": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p09", recordName: "g/voidrunner3d/p09/record" }),
+    "g/voidrunner3d/p09/record": createRecordValue("p09", { normal: { score: 41, updatedAt: 109 } })
+  }, async () => {
+    const standingsResponse = await request("GET", "/release/current-standings");
+    assert("current standings endpoint returns 200", standingsResponse.status === 200, `got ${standingsResponse.status}`);
+    assert("current standings returns up to top 10", standingsResponse.body?.standings?.entries?.length === 10, JSON.stringify(standingsResponse.body?.standings));
+    assert("current standings remain normal-only for release scope", standingsResponse.body?.standings?.difficulty === "normal", JSON.stringify(standingsResponse.body?.standings));
+
+    const settlementResponse = await request("GET", "/release/round-settlement?roundId=101");
+    assert("round settlement endpoint returns 200 for closed round", settlementResponse.status === 200, `got ${settlementResponse.status}`);
+    assert("round settlement status is settled", settlementResponse.body?.settlement?.status === "settled", JSON.stringify(settlementResponse.body?.settlement));
+    assert("round settlement winners has top-4 payouts", settlementResponse.body?.settlement?.winners?.length === 4, JSON.stringify(settlementResponse.body?.settlement));
+    assert("round settlement liabilities has bottom-6 obligations", settlementResponse.body?.settlement?.liabilities?.length === 6, JSON.stringify(settlementResponse.body?.settlement));
+    assert("round settlement payout schedule matches release plan", settlementResponse.body?.settlement?.winners?.map((winner) => winner.amount).join(",") === "100,70,20,10", JSON.stringify(settlementResponse.body?.settlement?.winners));
+    assert("round settlement liability schedule matches release plan", settlementResponse.body?.settlement?.liabilities?.map((entry) => entry.amount).join(",") === "28,30,33,35,36,38", JSON.stringify(settlementResponse.body?.settlement?.liabilities));
+
+    const eligibilityResponse = await request("GET", "/release/player-eligibility?handle=p09");
+    assert("player eligibility endpoint returns 200", eligibilityResponse.status === 200, `got ${eligibilityResponse.status}`);
+    assert("liability player is blocked after settlement", eligibilityResponse.body?.eligibility?.eligible === false, JSON.stringify(eligibilityResponse.body?.eligibility));
+    assert("eligibility exposes blocked and unpaid reasons", eligibilityResponse.body?.eligibility?.reasons?.blockedUntilLegEnd === true && eligibilityResponse.body?.eligibility?.reasons?.unpaid === true, JSON.stringify(eligibilityResponse.body?.eligibility));
+
+    const obligationsResponse = await request("GET", "/release/player-obligations?handle=p09");
+    assert("player obligations endpoint returns 200", obligationsResponse.status === 200, `got ${obligationsResponse.status}`);
+    assert("player obligations exposes due records", obligationsResponse.body?.obligations?.outstanding?.length >= 1, JSON.stringify(obligationsResponse.body?.obligations));
+    assert("player obligations expose blocked current-leg status", obligationsResponse.body?.obligations?.blockedUntilLegEnd === true && obligationsResponse.body?.obligations?.unpaid === true, JSON.stringify(obligationsResponse.body?.obligations));
+
+    const recentSettledResponse = await request("GET", "/release/recent-settled-rounds?limit=2");
+    assert("recent settled rounds endpoint returns 200", recentSettledResponse.status === 200, `got ${recentSettledResponse.status}`);
+    assert("recent settled rounds returns bounded list", recentSettledResponse.body?.rounds?.length <= 2, JSON.stringify(recentSettledResponse.body?.rounds));
+    assert("recent settled rounds include the finalized prior round", recentSettledResponse.body?.rounds?.[0]?.roundId === 101, JSON.stringify(recentSettledResponse.body?.rounds));
+  });
+
+  section("release settlement marks insufficient participants explicitly");
+  await withRelay({
+    "p/small1": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "small1", recordName: "g/voidrunner3d/small1/record" }),
+    "g/voidrunner3d/small1/record": createRecordValue("small1", { normal: { score: 10, updatedAt: 100 } }),
+    "p/small2": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "small2", recordName: "g/voidrunner3d/small2/record" }),
+    "g/voidrunner3d/small2/record": createRecordValue("small2", { normal: { score: 9, updatedAt: 101 } }),
+    "p/small3": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "small3", recordName: "g/voidrunner3d/small3/record" }),
+    "g/voidrunner3d/small3/record": createRecordValue("small3", { normal: { score: 8, updatedAt: 102 } })
+  }, async () => {
+    const settlementResponse = await request("GET", "/release/round-settlement?roundId=101");
+    assert("insufficient participants still returns settlement record", settlementResponse.status === 200, `got ${settlementResponse.status}`);
+    assert("insufficient participants uses closed-no-settlement", settlementResponse.body?.settlement?.status === "closed-no-settlement", JSON.stringify(settlementResponse.body?.settlement));
+    assert("insufficient participants provides explicit reason", settlementResponse.body?.settlement?.reason === "insufficient-qualified-participants", JSON.stringify(settlementResponse.body?.settlement));
+    assert("insufficient participants exposes minimum required participants", settlementResponse.body?.settlement?.minimumRequiredParticipants === 10, JSON.stringify(settlementResponse.body?.settlement));
+  });
+
+  section("release validation and visibility edge cases");
+  await withRelay({}, async () => {
+    const invalidSettlementResponse = await request("GET", "/release/round-settlement?roundId=bad");
+    assert("invalid release settlement round id returns 400", invalidSettlementResponse.status === 400, `got ${invalidSettlementResponse.status}`);
+
+    const invalidEligibilityResponse = await request("GET", "/release/player-eligibility?handle=!!");
+    assert("invalid release eligibility handle returns 400", invalidEligibilityResponse.status === 400, `got ${invalidEligibilityResponse.status}`);
+
+    const defaultObligationsResponse = await request("GET", "/release/player-obligations?handle=ghost01");
+    assert("unknown player obligations still return 200", defaultObligationsResponse.status === 200, `got ${defaultObligationsResponse.status}`);
+    assert("unknown player obligations default to no outstanding items", Array.isArray(defaultObligationsResponse.body?.obligations?.outstanding) && defaultObligationsResponse.body.obligations.outstanding.length === 0, JSON.stringify(defaultObligationsResponse.body?.obligations));
+
+    const cappedRecentRoundsResponse = await request("GET", "/release/recent-settled-rounds?limit=999");
+    assert("recent settled rounds still return 200 for oversized limit", cappedRecentRoundsResponse.status === 200, `got ${cappedRecentRoundsResponse.status}`);
+    assert("recent settled rounds cap oversized limit to available data", Array.isArray(cappedRecentRoundsResponse.body?.rounds), JSON.stringify(cappedRecentRoundsResponse.body?.rounds));
   });
 
   section("POST /api/prizes/close-window removed from public relay");

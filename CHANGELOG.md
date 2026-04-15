@@ -1,24 +1,25 @@
-# Changelog — 2026-04-13
+# Changelog
 
-## [High] Admin relay governs prize writes and telemetry
-- Added `admin-relay.js` to isolate prize window, pot, and sendtoname controls behind `ADMIN=true`, `PRIZE_POT_ADDRESS`, and a dedicated admin port while keeping the public relay read-only for those routes.
-- Documented the new public `GET /api/prizes/latest` endpoint along with on-chain storage at `g/voidrunner3d/prizes/{type}/{index}`, so prize metadata and featured winners stay discoverable without exposing sensitive writes.
-- Reinforced the release cadence by linking the README, changelog, and memory bank guidance to the new admin workflow and reward validation telemetry.
+## [0.1.0] - 2026-04-14
 
-## [High] Validation workflow and documentation refresh
-- Introduced `npm run validate:mvp` to run `relay.test.js`, `relay-http.test.js`, `admin-relay.test.js`, and `game.test.js` in a single guardrail, ensuring both relay and client suites stay synced with the MVP behavior.
-- Updated README operations, installation, and usage guidance to highlight the admin relay, prize workflows, and the new validation script so operators and QA teams know where to look for telemetry and controls.
+### Backend
+- Shipped the public release relay in [`leaderboard-relay.js`](leaderboard-relay.js) as the authoritative runtime for health, leaderboard reads, player registration, player-owned score storage, encoded record envelopes, and chain-scan leaderboard reconstruction.
+- Shipped deterministic release-economy support in [`leaderboard-relay.js`](leaderboard-relay.js:55) with block-derived rounds and legs, current round and current leg pointers, current standings, round settlement, player eligibility, player obligations, and recent settled rounds.
+- Shipped settlement generation in [`ensureRoundFinalized()`](leaderboard-relay.js:996) with the `v0.1.0` payout schedule of 100, 70, 20, and 10 ROD plus liability amounts of 28, 30, 33, 35, 36, and 38 ROD.
+- Preserved integrity verification of [`index.html`](index.html) and [`leaderboard-relay.exe`](leaderboard-relay.exe) through [`initializeIntegrityVerification()`](leaderboard-relay.js:163), including read-only degradation for failed integrity checks.
 
-# Changelog — 2026-04-12
+### Frontend
+- Shipped release-phase economy widgets in the menu overlay in [`index.html`](index.html:572) for current round, round countdown, current leg, leg countdown, player eligibility, and reward distribution.
+- Shipped recent settled-round visibility in [`index.html`](index.html:584) and game-over release outcome widgets in [`index.html`](index.html:604) for placement, reward or liability result, obligations, blocked status, and leg reset countdown.
+- Kept the gameplay HUD in [`index.html`](index.html:549) focused on run-time gameplay state instead of release-economy panels.
+- Preserved the shipped registration and submit-to-chain flow in [`index.html`](index.html:1720) and [`index.html`](index.html:1781), including handle locking after successful registration in [`applyPlayerStatus()`](index.html:1489).
 
-## [High] Focus-loss timer anti-cheat fix
-- Fixed gameplay timing so survival score no longer advances when the browser loses focus or the tab is hidden/minimized. Added automatic pause on blur/visibility loss, switched timer accounting to active-play accumulation, and added regression coverage verifying timer freeze while paused.
+### Runtime and admin model
+- Reduced [`admin-relay.js`](admin-relay.js) to diagnostics-only scope with health reporting and explicit non-authoritative status for the release economy.
+- Deprecated and disabled legacy MVP admin routes `POST /api/prizes` and `POST /api/prizes/close-window` in [`admin-relay.js`](admin-relay.js:37) and [`admin-relay.js`](admin-relay.js:131).
+- Removed public MVP prize-window and pot-status behavior from the shipped release relay, as covered by [`relay-http.test.js`](relay-http.test.js:564) and [`relay-http.test.js`](relay-http.test.js:576).
 
-## [High] Player-owned leaderboard rollout
-- Documented the new registration-aware relay API, namespace naming (`p/<handle>` / `g/voidrunner3d/<handle>/record`), per-player record submission, and derived leaderboard aggregation over `g/voidrunner3d/` entries.
-## [High] Handle-only leaderboard refinement
-- Clarified that registrations treat `handle` as the sole identifier, that duplicate-handle attempts return HTTP 409, and that registered handles lock in the UI. Added Game Over flow guidance: unregistered players see Register, registered players see Submit, and Submit only enables once a valid score is available.
-## [High] New-user handle UX fix
-- Removed the seeded default handle from the Game Over registration flow, restored a true empty first-run state, prevented unrelated registered handles from locking the input, and clarified duplicate-handle errors in the UI.
-## [High] Register/submit flow regression coverage
-- Added regression coverage for empty first-run handle state, editable handle sanitization, and unregistered status handling so the register/submit UX no longer regresses silently.
+### Validation
+- Shipped package version `0.1.0` and the release validation command [`validate:release`](package.json:13).
+- Validated the release runtime with passing results in [`relay.test.js`](relay.test.js), [`relay-http.test.js`](relay-http.test.js), [`admin-relay.test.js`](admin-relay.test.js), and [`game.test.js`](game.test.js).
+- Latest validated totals: 49 + 137 + 9 + 68 = 261 passing tests, 0 failures.
