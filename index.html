@@ -502,6 +502,22 @@
       pointer-events: auto;
     }
 
+    #playerHandleBadge {
+      font-size: 11px;
+      padding: 7px 10px;
+      border: 1px solid rgba(121, 215, 255, 0.45);
+      border-radius: 10px;
+      background: rgba(8, 16, 30, 0.86);
+      color: #cfefff;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      text-align: center;
+      max-width: 210px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .small-btn {
       font-size: 11px;
       padding: 8px 10px;
@@ -634,6 +650,7 @@
   <div id="pauseBadge">PAUSED</div>
 
   <div id="cornerControls">
+    <div id="playerHandleBadge">PLAYER: --</div>
     <button id="pauseBtn" class="small-btn">PAUSE</button>
     <button id="muteBtn" class="small-btn">MUTE: OFF</button>
     <button id="mouseToggleBtn" class="small-btn">MOUSE: ON</button>
@@ -688,6 +705,7 @@
       const pauseBtn = document.getElementById("pauseBtn");
       const muteBtn = document.getElementById("muteBtn");
       const mouseToggleBtn = document.getElementById("mouseToggleBtn");
+      const playerHandleBadge = document.getElementById("playerHandleBadge");
       const difficultyButtons = Array.from(document.querySelectorAll(".difficulty-btn"));
       const chainTitle = document.getElementById("chainTitle");
       const chainStatusText = document.getElementById("chainStatusText");
@@ -1195,6 +1213,11 @@
         return handle || "";
       }
 
+      function updateCornerPlayerName() {
+        const activeHandle = sanitizeHandle(playerInitialsInput.value) || lockedHandle || readStoredHandle();
+        playerHandleBadge.textContent = `PLAYER: ${activeHandle || "--"}`;
+      }
+
       function clearRegisteredPlayerState() {
         registeredPlayerHandle = "";
         lockedHandle = "";
@@ -1539,6 +1562,7 @@
           isCurrentHandle
         });
 
+        updateCornerPlayerName();
         updateSubmitButtonState();
       }
 
@@ -1684,6 +1708,7 @@
           submitChainScoreBtn.style.display = "none";
           const lockIndicator = document.getElementById("handleLockIndicator");
           if (lockIndicator) lockIndicator.style.display = "none";
+          updateCornerPlayerName();
           updateSubmitButtonState();
           setSubmitStatus("enter handle (3-24 chars: a-z, 0-9, _, -)", "#ffb0b0");
           loadFeaturedRankContext();
@@ -1702,6 +1727,7 @@
           } else {
             setSubmitStatus(`handle ${handle} is available - use Register`, "#a6c6dd");
           }
+          updateCornerPlayerName();
           loadFeaturedRankContext();
         } catch {
           clearRegisteredPlayerState();
@@ -1711,6 +1737,7 @@
           submitChainScoreBtn.style.display = "none";
           const lockIndicator = document.getElementById("handleLockIndicator");
           if (lockIndicator) lockIndicator.style.display = "none";
+          updateCornerPlayerName();
           updateSubmitButtonState();
           setSubmitStatus("relay offline (status check failed)", "#ffb0b0");
           loadFeaturedRankContext();
@@ -2551,6 +2578,7 @@
 
         playerInitialsInput.addEventListener("input", () => {
           playerInitialsInput.value = sanitizeHandle(playerInitialsInput.value);
+          updateCornerPlayerName();
           if (!lockedHandle) {
             clearRegisteredPlayerState();
             registerChainPlayerBtn.style.display = "inline-block";
@@ -2598,6 +2626,7 @@
       setSelectedDifficulty("normal");
       showMenu();
       playerInitialsInput.value = readStoredHandle();
+      updateCornerPlayerName();
       setSubmitStatus("checking registration...", "#a6c6dd");
       updateSubmitButtonState();
       refreshPlayerStatus();
