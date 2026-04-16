@@ -737,6 +737,79 @@ section("release settlement derivation");
   assert("liabilities start as due with zero amountPaid", settledPayload.liabilities.every((entry) => entry.status === "due" && entry.amountPaid === 0), JSON.stringify(settledPayload.liabilities));
 }
 
+section("property-based invariants for round/leg derivation");
+{
+  const totalSamples = 500;
+  let invariantFailures = 0;
+
+  for (let sampleIndex = 0; sampleIndex < totalSamples; sampleIndex++) {
+    const blockHeight = Math.floor(Math.random() * 200000);
+    const roundId = getRoundIdFromBlockHeight(blockHeight);
+    const legId = getLegIdFromBlockHeight(blockHeight);
+    const roundRange = getRoundBlockRange(roundId);
+    const legRange = getLegBlockRange(legId);
+
+    const roundContainsBlock = roundRange.blockStart <= blockHeight && blockHeight <= roundRange.blockEnd;
+    const legContainsBlock = legRange.blockStart <= blockHeight && blockHeight <= legRange.blockEnd;
+    const roundWidthValid = roundRange.blockEnd - roundRange.blockStart + 1 === RELEASE_ROUND_BLOCK_SIZE;
+    const legWidthValid = legRange.blockEnd - legRange.blockStart + 1 === RELEASE_LEG_BLOCK_SIZE;
+    const roundsPerLegInvariant = Math.floor(roundId / RELEASE_ROUNDS_PER_LEG) === legId;
+
+    if (!(roundContainsBlock && legContainsBlock && roundWidthValid && legWidthValid && roundsPerLegInvariant)) {
+      invariantFailures++;
+    }
+  }
+
+  assert(
+    "randomized round/leg derivation invariants hold across 500 samples",
+    invariantFailures === 0,
+    `failures=${invariantFailures}`
+  );
+}
+
+section("property-based invariants for settlement schedules");
+{
+  const totalSamples = 120;
+  let invariantFailures = 0;
+
+  for (let sampleIndex = 0; sampleIndex < totalSamples; sampleIndex++) {
+    const participantCount = Math.floor(Math.random() * 16);
+    const entries = Array.from({ length: participantCount }, (_, index) => ({
+      rank: index + 1,
+      handle: `h${sampleIndex}_${index}`,
+      score: Math.round((Math.random() * 1000) * 1000) / 1000
+    }));
+
+    const settlementPayload = buildSettlementFromStandings(
+      {
+        roundId: 10 + sampleIndex,
+        legId: Math.floor((10 + sampleIndex) / RELEASE_ROUNDS_PER_LEG),
+        roundStart: (10 + sampleIndex) * RELEASE_ROUND_BLOCK_SIZE,
+        roundEnd: ((10 + sampleIndex) * RELEASE_ROUND_BLOCK_SIZE) + RELEASE_ROUND_BLOCK_SIZE - 1,
+        entries
+      },
+      50000 + sampleIndex
+    );
+
+    const shouldSettle = participantCount >= RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS;
+    const winnersCountValid = settlementPayload.winners.length === (shouldSettle ? RELEASE_PAYOUTS.length : 0);
+    const liabilitiesCountValid = settlementPayload.liabilities.length === (shouldSettle ? RELEASE_LIABILITIES.length : 0);
+    const winnersAmountsValid = settlementPayload.winners.map((entry) => entry.amount).join(",") === (shouldSettle ? RELEASE_PAYOUTS.join(",") : "");
+    const liabilitiesAmountsValid = settlementPayload.liabilities.map((entry) => entry.amount).join(",") === (shouldSettle ? RELEASE_LIABILITIES.join(",") : "");
+    const statusValid = shouldSettle ? settlementPayload.status === "settled" : settlementPayload.status === "closed-no-settlement";
+
+    if (!(winnersCountValid && liabilitiesCountValid && winnersAmountsValid && liabilitiesAmountsValid && statusValid)) {
+      invariantFailures++;
+    }
+  }
+
+  assert(
+    "randomized settlement schedule invariants hold across 120 samples",
+    invariantFailures === 0,
+    `failures=${invariantFailures}`
+  );
+}
+
 console.log(`\n════════════════════════════════`);
 console.log(`Results: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

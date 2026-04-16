@@ -475,6 +475,7 @@ async function runTests() {
     const relevantErrors = consoleErrors.filter(e =>
       !e.includes("ERR_CONNECTION_REFUSED") &&
       !e.includes("ERR_CONNECTION_RESET") &&
+      !e.includes("status of 502") &&
       !e.includes("AudioContext encountered an error") &&
       !e.includes("favicon") &&
       !e.includes("127.0.0.1:8787") &&

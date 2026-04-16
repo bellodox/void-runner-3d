@@ -341,6 +341,64 @@
       letter-spacing: 0.04em;
     }
 
+    .relay-mode-pill {
+      margin: 0 0 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      background: rgba(7, 14, 28, 0.65);
+      color: #dcefff;
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .relay-mode-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #9cc8e2;
+      box-shadow: 0 0 8px rgba(156, 200, 226, 0.65);
+      flex-shrink: 0;
+    }
+
+    .relay-mode-pill.mode-full {
+      border-color: rgba(101, 245, 168, 0.55);
+      background: rgba(16, 44, 31, 0.45);
+      color: #d8ffe9;
+    }
+
+    .relay-mode-pill.mode-full .relay-mode-dot {
+      background: #65f5a8;
+      box-shadow: 0 0 9px rgba(101, 245, 168, 0.75);
+    }
+
+    .relay-mode-pill.mode-readonly {
+      border-color: rgba(255, 200, 87, 0.6);
+      background: rgba(48, 33, 8, 0.52);
+      color: #ffe7b0;
+    }
+
+    .relay-mode-pill.mode-readonly .relay-mode-dot {
+      background: #ffc857;
+      box-shadow: 0 0 9px rgba(255, 200, 87, 0.75);
+    }
+
+    .relay-mode-pill.mode-unavailable {
+      border-color: rgba(255, 95, 95, 0.6);
+      background: rgba(55, 16, 16, 0.52);
+      color: #ffd2d2;
+    }
+
+    .relay-mode-pill.mode-unavailable .relay-mode-dot {
+      background: #ff5f5f;
+      box-shadow: 0 0 9px rgba(255, 95, 95, 0.78);
+    }
+
     .chain-list {
       margin: 0;
       padding: 0;
@@ -606,7 +664,7 @@
       <div class="chain-board">
         <h2 id="chainTitle">Chain Leaderboard (Normal)</h2>
         <p id="chainStatusText" class="status-line">Relay status: checking...</p>
-        <p id="relayModeText" class="status-line">Relay mode: checking...</p>
+        <p id="relayModeText" class="relay-mode-pill" aria-live="polite"><span class="relay-mode-dot" aria-hidden="true"></span><span id="relayModeTextValue">Relay mode: checking...</span></p>
         <ol id="chainLeaderboardList" class="chain-list"></ol>
       </div>
     </div>
@@ -641,6 +699,7 @@
       </div>
       <div id="handleLockIndicator" class="lock-indicator" style="display:none;">Handle locked after registration</div>
       <p id="submitChainStatusText" class="status-line">Chain submission status: idle</p>
+      <p id="gameOverRelayModeText" class="relay-mode-pill" aria-live="polite"><span class="relay-mode-dot" aria-hidden="true"></span><span id="gameOverRelayModeTextValue">Relay mode: checking...</span></p>
       <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
         <button id="playAgainBtn" class="action-btn">Play Again</button>
         <button id="mainMenuBtn" class="action-btn">Main Menu</button>
@@ -711,11 +770,14 @@
       const chainTitle = document.getElementById("chainTitle");
       const chainStatusText = document.getElementById("chainStatusText");
       const relayModeText = document.getElementById("relayModeText");
+      const relayModeTextValue = document.getElementById("relayModeTextValue");
       const chainLeaderboardList = document.getElementById("chainLeaderboardList");
       const playerInitialsInput = document.getElementById("playerInitialsInput");
       const registerChainPlayerBtn = document.getElementById("registerChainPlayerBtn");
       const submitChainScoreBtn = document.getElementById("submitChainScoreBtn");
       const submitChainStatusText = document.getElementById("submitChainStatusText");
+      const gameOverRelayModeText = document.getElementById("gameOverRelayModeText");
+      const gameOverRelayModeTextValue = document.getElementById("gameOverRelayModeTextValue");
       const menuCurrentRoundText = document.getElementById("menuCurrentRoundText");
       const menuRoundCountdownText = document.getElementById("menuRoundCountdownText");
       const menuCurrentLegText = document.getElementById("menuCurrentLegText");
@@ -749,6 +811,7 @@
         hard: null
       };
       let featuredRankPayload = null;
+      let leaderboardRequestSequence = 0;
 
       function formatBlockRange(blockStart, blockEnd) {
         if (!Number.isInteger(blockStart) || !Number.isInteger(blockEnd)) return "--";
@@ -1222,12 +1285,16 @@
 
       function clearRegisteredPlayerState() {
         registeredPlayerHandle = "";
-        lockedHandle = "";
         registeredPlayerScores = {
           easy: null,
           normal: null,
           hard: null
         };
+      }
+
+      function clearAllRegisteredPlayerState() {
+        clearRegisteredPlayerState();
+        lockedHandle = "";
       }
 
       function setChainStatus(text, color) {
@@ -1241,8 +1308,28 @@
       }
 
       function setRelayModeStatus(text, color) {
-        relayModeText.textContent = `Relay mode: ${text}`;
-        relayModeText.style.color = color;
+        const normalizedRelayMode = String(text || "").toLowerCase();
+        const relayModeClass = normalizedRelayMode.includes("read-only")
+          ? "mode-readonly"
+          : normalizedRelayMode.includes("unavailable")
+            ? "mode-unavailable"
+            : normalizedRelayMode.includes("full access")
+              ? "mode-full"
+              : "";
+
+        if (relayModeTextValue) {
+          relayModeTextValue.textContent = `Relay mode: ${text}`;
+          relayModeTextValue.style.color = color;
+        }
+        relayModeText.classList.remove("mode-full", "mode-readonly", "mode-unavailable");
+        if (relayModeClass) relayModeText.classList.add(relayModeClass);
+
+        if (gameOverRelayModeText && gameOverRelayModeTextValue) {
+          gameOverRelayModeTextValue.textContent = `Relay mode: ${text}`;
+          gameOverRelayModeTextValue.style.color = color;
+          gameOverRelayModeText.classList.remove("mode-full", "mode-readonly", "mode-unavailable");
+          if (relayModeClass) gameOverRelayModeText.classList.add(relayModeClass);
+        }
       }
 
       function getApiErrorText(payload, fallbackText) {
@@ -1433,7 +1520,7 @@
         }
 
         try {
-          const [currentRoundPayload, currentLegPayload, settlementPayload, recentRoundsPayload, eligibilityPayload] = await Promise.all([
+          const [currentRoundResult, currentLegResult, settlementResult, recentRoundsResult, eligibilityResult] = await Promise.allSettled([
             fetchReleaseJson("/release/current-round"),
             fetchReleaseJson("/release/current-leg"),
             fetchReleaseJson("/release/round-settlement"),
@@ -1441,11 +1528,20 @@
             activeHandle ? fetchReleaseJson(`/release/player-eligibility?handle=${encodeURIComponent(activeHandle)}`) : Promise.resolve(null)
           ]);
 
-          const round = currentRoundPayload?.round || null;
-          const leg = currentLegPayload?.leg || null;
-          const settlement = settlementPayload?.settlement || null;
-          const recentRounds = Array.isArray(recentRoundsPayload?.rounds) ? recentRoundsPayload.rounds : [];
-          const eligibility = eligibilityPayload?.eligibility || null;
+          const currentRoundPayload = currentRoundResult.status === "fulfilled" ? currentRoundResult.value : null;
+          const currentLegPayload = currentLegResult.status === "fulfilled" ? currentLegResult.value : null;
+          const settlementPayload = settlementResult.status === "fulfilled" ? settlementResult.value : null;
+          const recentRoundsPayload = recentRoundsResult.status === "fulfilled" ? recentRoundsResult.value : null;
+          const eligibilityPayload = eligibilityResult.status === "fulfilled" ? eligibilityResult.value : null;
+
+          const round = currentRoundPayload && currentRoundPayload.round ? currentRoundPayload.round : null;
+          const leg = currentLegPayload && currentLegPayload.leg ? currentLegPayload.leg : null;
+          const settlement = settlementPayload && settlementPayload.settlement ? settlementPayload.settlement : null;
+          const recentRounds = recentRoundsPayload && Array.isArray(recentRoundsPayload.rounds) ? recentRoundsPayload.rounds : [];
+          const eligibility = eligibilityPayload && eligibilityPayload.eligibility ? eligibilityPayload.eligibility : null;
+
+          const hasAnyReleaseData = Boolean(round || leg || settlement || recentRounds.length || eligibility);
+          if (!hasAnyReleaseData) throw new Error("No release data available");
 
           setReleaseText(menuCurrentRoundText, `Round ${round?.id ?? "--"} · blocks ${formatBlockRange(round?.blockStart, round?.blockEnd)}`, "#dcefff");
           setReleaseText(menuRoundCountdownText, `Round countdown: ${formatBlocksRemaining(round?.blocksRemaining)}`, "#dcefff");
@@ -1486,7 +1582,7 @@
         const handle = getActiveHandleForRelease();
 
         try {
-          const [currentRoundPayload, currentLegPayload, standingsPayload, settlementPayload, obligationsPayload, eligibilityPayload] = await Promise.all([
+          const [currentRoundResult, currentLegResult, standingsResult, settlementResult, obligationsResult, eligibilityResult] = await Promise.allSettled([
             fetchReleaseJson("/release/current-round"),
             fetchReleaseJson("/release/current-leg"),
             fetchReleaseJson("/release/current-standings"),
@@ -1495,12 +1591,23 @@
             handle ? fetchReleaseJson(`/release/player-eligibility?handle=${encodeURIComponent(handle)}`) : Promise.resolve(null)
           ]);
 
-          const currentLeg = currentLegPayload?.leg || null;
-          const standingsEntries = Array.isArray(standingsPayload?.standings?.entries) ? standingsPayload.standings.entries : [];
+          const currentRoundPayload = currentRoundResult.status === "fulfilled" ? currentRoundResult.value : null;
+          const currentLegPayload = currentLegResult.status === "fulfilled" ? currentLegResult.value : null;
+          const standingsPayload = standingsResult.status === "fulfilled" ? standingsResult.value : null;
+          const settlementPayload = settlementResult.status === "fulfilled" ? settlementResult.value : null;
+          const obligationsPayload = obligationsResult.status === "fulfilled" ? obligationsResult.value : null;
+          const eligibilityPayload = eligibilityResult.status === "fulfilled" ? eligibilityResult.value : null;
+
+          if (!currentRoundPayload && !currentLegPayload && !standingsPayload && !settlementPayload && !obligationsPayload && !eligibilityPayload) {
+            throw new Error("No game-over release data available");
+          }
+
+          const currentLeg = currentLegPayload && currentLegPayload.leg ? currentLegPayload.leg : null;
+          const standingsEntries = standingsPayload && standingsPayload.standings && Array.isArray(standingsPayload.standings.entries) ? standingsPayload.standings.entries : [];
           const playerPlacement = handle ? standingsEntries.find((entry) => entry.handle === handle) : null;
-          const settlement = settlementPayload?.settlement || null;
-          const obligations = obligationsPayload?.obligations || null;
-          const eligibility = eligibilityPayload?.eligibility || null;
+          const settlement = settlementPayload && settlementPayload.settlement ? settlementPayload.settlement : null;
+          const obligations = obligationsPayload && obligationsPayload.obligations ? obligationsPayload.obligations : null;
+          const eligibility = eligibilityPayload && eligibilityPayload.eligibility ? eligibilityPayload.eligibility : null;
 
           if (handle && playerPlacement) {
             setReleaseText(gameOverPlacementText, `Current round placement: #${playerPlacement.rank} (${playerPlacement.handle})`, "#dcefff");
@@ -1726,27 +1833,31 @@
 
       async function loadChainLeaderboard() {
         if (!allowedDifficultyKeys.has(selectedDifficulty)) return;
+        const requestedDifficulty = selectedDifficulty;
+        const requestSequence = ++leaderboardRequestSequence;
         setChainStatus("loading leaderboard...", "#a6c6dd");
         refreshRelayRuntimeMode();
 
         try {
-          const response = await fetch(`${RELAY_BASE_URL}/leaderboard?difficulty=${selectedDifficulty}`);
+          const response = await fetch(`${RELAY_BASE_URL}/leaderboard?difficulty=${requestedDifficulty}`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const payload = await response.json();
+          if (requestSequence !== leaderboardRequestSequence || requestedDifficulty !== selectedDifficulty) return;
           chainEntries = Array.isArray(payload.entries) ? payload.entries : [];
           setChainStatus("online", "#65f5a8");
         } catch {
-          chainEntries = [];
+          if (requestSequence !== leaderboardRequestSequence || requestedDifficulty !== selectedDifficulty) return;
           setChainStatus("offline (relay or node unavailable)", "#ffb0b0");
         }
 
+        if (requestSequence !== leaderboardRequestSequence || requestedDifficulty !== selectedDifficulty) return;
         renderChainLeaderboard();
       }
 
       async function refreshPlayerStatus() {
         const handle = sanitizeHandle(playerInitialsInput.value);
         if (!handle) {
-          clearRegisteredPlayerState();
+          clearAllRegisteredPlayerState();
           playerInitialsInput.value = "";
           playerInitialsInput.disabled = false;
           playerInitialsInput.title = "";
@@ -1776,7 +1887,12 @@
           updateCornerPlayerName();
           loadFeaturedRankContext();
         } catch {
-          clearRegisteredPlayerState();
+          registeredPlayerHandle = "";
+          registeredPlayerScores = {
+            easy: null,
+            normal: null,
+            hard: null
+          };
           playerInitialsInput.disabled = false;
           playerInitialsInput.title = "";
           registerChainPlayerBtn.style.display = "inline-block";
@@ -1833,11 +1949,15 @@
 
           if (!response.ok) throw new Error(getApiErrorText(payload, `http ${response.status}`));
 
-          localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
+          try {
+            localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
+          } catch {
+            // Ignore storage failures (private mode/quota), keep in-memory flow working.
+          }
           applyPlayerStatus(player);
           setSubmitStatus(`registered as p/${player?.handle || handle}`, "#65f5a8");
         } catch (error) {
-          clearRegisteredPlayerState();
+          clearAllRegisteredPlayerState();
           playerInitialsInput.disabled = false;
           playerInitialsInput.title = "";
           registerChainPlayerBtn.style.display = "inline-block";
@@ -1888,7 +2008,11 @@
 
           if (!response.ok) throw new Error(getApiErrorText(payload, `http ${response.status}`));
           chainEntries = Array.isArray(payload.entries) ? payload.entries : [];
-          localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
+          try {
+            localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
+          } catch {
+            // Ignore storage failures (private mode/quota), keep in-memory flow working.
+          }
           applyPlayerStatus(payload.player || null);
           setChainStatus("online", "#65f5a8");
           setSubmitStatus("submitted", "#65f5a8");
@@ -2485,6 +2609,8 @@
         shipRoot.visible = true;
         setEngineAudioLevel(0);
         loadReleaseOverview();
+        loadChainLeaderboard();
+        refreshRelayRuntimeMode();
       }
 
       function startGame() {

@@ -1,6 +1,7 @@
 *.~*
 #*.exe
 test_*
+coverage
 admin-
 .kilocode
 .env

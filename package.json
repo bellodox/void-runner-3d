@@ -10,7 +10,9 @@
     "test:relay:http": "node relay-http.test.js",
     "test:relay:admin": "node admin-relay.test.js",
     "test:game": "node game.test.js",
-    "validate:release": "npm run test:relay && npm run test:relay:http && npm run test:relay:admin && npm run test:game"
+    "validate:release": "npm run test:relay && npm run test:relay:http && npm run test:relay:admin && npm run test:game",
+    "coverage:relay": "npx c8 --reporter=text --reporter=lcov --reporter=html --all --include=leaderboard-relay.js --exclude=*.test.js node relay.test.js && npx c8 --reporter=text --reporter=lcov --reporter=html --all --include=leaderboard-relay.js --exclude=*.test.js node relay-http.test.js",
+    "coverage:release": "npx c8 --reporter=text --reporter=lcov --reporter=html --all --include=leaderboard-relay.js --exclude=*.test.js npm run validate:release"
   },
   "engines": {
     "node": ">=18"

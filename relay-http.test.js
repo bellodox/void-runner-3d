@@ -49,11 +49,17 @@ function computeFileHash(fileName) {
 
 async function startRelay(initialStore = {}, options = {}) {
   return new Promise((resolve, reject) => {
+    const configuredBlockHeight = Number.isInteger(options.blockHeight) && options.blockHeight >= 0
+      ? options.blockHeight
+      : 12345;
     const serializedStore = JSON.stringify(initialStore).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+    const ownedNames = Array.isArray(options.ownedNames) ? options.ownedNames : [];
+    const serializedOwnedNames = JSON.stringify(ownedNames).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
     const relayPath = path.join(__dirname, "leaderboard-relay.js").replace(/\\/g, "\\\\");
     const wrapperCode = `
       const initialEntries = JSON.parse('${serializedStore}');
       const state = new Map(Object.entries(initialEntries));
+      const ownedNames = new Set(JSON.parse('${serializedOwnedNames}'));
 
       function buildJsonResponse(payload, status = 200) {
         return {
@@ -70,7 +76,7 @@ async function startRelay(initialStore = {}, options = {}) {
         const params = Array.isArray(rpcRequest.params) ? rpcRequest.params : [];
 
         if (rpcRequest.method === 'getblockcount') {
-          return buildJsonResponse({ result: 12345 });
+          return buildJsonResponse({ result: ${configuredBlockHeight} });
         }
 
         if (rpcRequest.method === 'name_show') {
@@ -78,7 +84,7 @@ async function startRelay(initialStore = {}, options = {}) {
           if (!state.has(targetName)) {
             return buildJsonResponse({ error: { code: -4, message: 'name not found' } });
           }
-          return buildJsonResponse({ result: { name: targetName, value: state.get(targetName) } });
+          return buildJsonResponse({ result: { name: targetName, value: state.get(targetName), ismine: ownedNames.has(targetName) } });
         }
 
         if (rpcRequest.method === 'name_register') {
@@ -166,6 +172,16 @@ async function startRelay(initialStore = {}, options = {}) {
       }
     }, 1500);
   });
+}
+
+async function withRelayAtHeight(initialStore, blockHeight, testBlock) {
+  await startRelay(initialStore, { blockHeight });
+  await waitForRelay();
+  try {
+    await testBlock();
+  } finally {
+    stopRelay();
+  }
 }
 
 function stopRelay() {
@@ -264,6 +280,27 @@ async function runTests() {
 
     const registerResponse = await request("POST", "/player/register", { handle: "warnmode01" });
     assert("warn mismatch blocks mutating routes", registerResponse.status === 503, `got ${registerResponse.status}`);
+  } finally {
+    stopRelay();
+  }
+
+  section("integrity mode - warn owner bootstrap allows full access when hash names are missing");
+  await startRelay({
+    "g/voidrunner3d/gamehash": "bootstrap-pending",
+    "g/voidrunner3d/relayhash": "bootstrap-pending"
+  }, {
+    integrityMode: "warn",
+    ownedNames: ["g/voidrunner3d/gamehash", "g/voidrunner3d/relayhash"]
+  });
+  await waitForRelay();
+  try {
+    const healthResponse = await request("GET", "/health");
+    assert("warn owner bootstrap health returns 200", healthResponse.status === 200, `got ${healthResponse.status}`);
+    assert("warn owner bootstrap reports skipped-owner-bootstrap", healthResponse.body?.integrity?.status === "skipped-owner-bootstrap", JSON.stringify(healthResponse.body?.integrity));
+    assert("warn owner bootstrap keeps readOnly=false", healthResponse.body?.integrity?.readOnly === false, JSON.stringify(healthResponse.body?.integrity));
+
+    const registerResponse = await request("POST", "/player/register", { handle: "ownerboot01" });
+    assert("warn owner bootstrap allows mutating routes", registerResponse.status === 200, `got ${registerResponse.status}`);
   } finally {
     stopRelay();
   }
@@ -609,6 +646,32 @@ async function runTests() {
     assert("current round reports leg id aligned with current leg endpoint", currentRoundResponse.body?.round?.legId === currentLegResponse.body?.leg?.id, JSON.stringify({ round: currentRoundResponse.body?.round, leg: currentLegResponse.body?.leg }));
   });
 
+  section("release derivation at exact round and leg boundaries");
+  await withRelayAtHeight({}, 119, async () => {
+    const currentRoundResponse = await request("GET", "/release/current-round");
+    const currentLegResponse = await request("GET", "/release/current-leg");
+    assert("block 119 remains in round 0", currentRoundResponse.body?.round?.id === 0, JSON.stringify(currentRoundResponse.body?.round));
+    assert("block 119 remains in leg 0", currentLegResponse.body?.leg?.id === 0, JSON.stringify(currentLegResponse.body?.leg));
+  });
+
+  await withRelayAtHeight({}, 120, async () => {
+    const currentRoundResponse = await request("GET", "/release/current-round");
+    assert("block 120 advances to round 1", currentRoundResponse.body?.round?.id === 1, JSON.stringify(currentRoundResponse.body?.round));
+    assert("round start at transition is deterministic", currentRoundResponse.body?.round?.blockStart === 120, JSON.stringify(currentRoundResponse.body?.round));
+  });
+
+  await withRelayAtHeight({}, 1439, async () => {
+    const currentLegResponse = await request("GET", "/release/current-leg");
+    assert("block 1439 remains in leg 0", currentLegResponse.body?.leg?.id === 0, JSON.stringify(currentLegResponse.body?.leg));
+  });
+
+  await withRelayAtHeight({}, 1440, async () => {
+    const currentRoundResponse = await request("GET", "/release/current-round");
+    const currentLegResponse = await request("GET", "/release/current-leg");
+    assert("block 1440 advances to leg 1", currentLegResponse.body?.leg?.id === 1, JSON.stringify(currentLegResponse.body?.leg));
+    assert("block 1440 round/leg relationship stays aligned", currentRoundResponse.body?.round?.legId === 1, JSON.stringify(currentRoundResponse.body?.round));
+  });
+
   section("release standings, settlement, eligibility, obligations, and recent rounds");
   await withRelay({
     "p/p00": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p00", recordName: "g/voidrunner3d/p00/record" }),
@@ -675,6 +738,75 @@ async function runTests() {
     assert("insufficient participants uses closed-no-settlement", settlementResponse.body?.settlement?.status === "closed-no-settlement", JSON.stringify(settlementResponse.body?.settlement));
     assert("insufficient participants provides explicit reason", settlementResponse.body?.settlement?.reason === "insufficient-qualified-participants", JSON.stringify(settlementResponse.body?.settlement));
     assert("insufficient participants exposes minimum required participants", settlementResponse.body?.settlement?.minimumRequiredParticipants === 10, JSON.stringify(settlementResponse.body?.settlement));
+  });
+
+  section("release settlement reuses persisted settlement records when available");
+  await withRelay({
+    "g/voidrunner3d/release/v1/settlements/101": JSON.stringify({
+      version: 1,
+      game: "voidrunner3d",
+      roundId: 101,
+      legId: 8,
+      roundStart: 12120,
+      roundEnd: 12239,
+      status: "settled",
+      reason: null,
+      qualifiedParticipants: 10,
+      minimumRequiredParticipants: 10,
+      generatedAtBlock: 9999,
+      winners: [{ rank: 1, handle: "persisted", score: 999, amount: 100 }],
+      liabilities: []
+    })
+  }, async () => {
+    const settlementResponse = await request("GET", "/release/round-settlement?roundId=101");
+    assert("persisted settlement endpoint returns 200", settlementResponse.status === 200, `got ${settlementResponse.status}`);
+    assert("persisted settlement payload is reused instead of regenerated", settlementResponse.body?.settlement?.generatedAtBlock === 9999, JSON.stringify(settlementResponse.body?.settlement));
+    assert("persisted settlement winner handle is preserved", settlementResponse.body?.settlement?.winners?.[0]?.handle === "persisted", JSON.stringify(settlementResponse.body?.settlement?.winners));
+  });
+
+  section("release standings tie-break behavior remains deterministic");
+  await withRelay({
+    "p/alpha": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "alpha", recordName: "g/voidrunner3d/alpha/record" }),
+    "g/voidrunner3d/alpha/record": createRecordValue("alpha", { normal: { score: 50, updatedAt: 2000 } }),
+    "p/bravo": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "bravo", recordName: "g/voidrunner3d/bravo/record" }),
+    "g/voidrunner3d/bravo/record": createRecordValue("bravo", { normal: { score: 50, updatedAt: 2000 } }),
+    "p/charlie": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "charlie", recordName: "g/voidrunner3d/charlie/record" }),
+    "g/voidrunner3d/charlie/record": createRecordValue("charlie", { normal: { score: 50, updatedAt: 1500 } })
+  }, async () => {
+    const standingsResponse = await request("GET", "/release/current-standings");
+    assert("tie-break standings endpoint returns 200", standingsResponse.status === 200, `got ${standingsResponse.status}`);
+    const topEntries = standingsResponse.body?.standings?.entries || [];
+    assert("older updatedAt wins first tie-break", topEntries[0]?.handle === "charlie", JSON.stringify(topEntries));
+    assert("handle lexical order breaks exact score+timestamp ties", topEntries[1]?.handle === "alpha" && topEntries[2]?.handle === "bravo", JSON.stringify(topEntries));
+  });
+
+  section("eligibility clears previous-leg liabilities after leg transition");
+  await withRelayAtHeight({
+    "p/debtpilot": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "debtpilot", recordName: "g/voidrunner3d/debtpilot/record" }),
+    "g/voidrunner3d/debtpilot/record": createRecordValue("debtpilot", { normal: { score: 25, updatedAt: 1000 } }),
+    "g/voidrunner3d/release/v1/settlements/11": JSON.stringify({
+      version: 1,
+      game: "voidrunner3d",
+      roundId: 11,
+      legId: 0,
+      roundStart: 1320,
+      roundEnd: 1439,
+      status: "settled",
+      reason: null,
+      qualifiedParticipants: 10,
+      minimumRequiredParticipants: 10,
+      generatedAtBlock: 1440,
+      winners: [],
+      liabilities: [{ rank: 5, handle: "debtpilot", score: 20, amount: 36, amountPaid: 0, status: "due" }]
+    })
+  }, 1440, async () => {
+    const eligibilityResponse = await request("GET", "/release/player-eligibility?handle=debtpilot");
+    const obligationsResponse = await request("GET", "/release/player-obligations?handle=debtpilot");
+
+    assert("new leg eligibility endpoint returns 200", eligibilityResponse.status === 200, `got ${eligibilityResponse.status}`);
+    assert("new leg obligations endpoint returns 200", obligationsResponse.status === 200, `got ${obligationsResponse.status}`);
+    assert("previous-leg liabilities do not block in new leg", eligibilityResponse.body?.eligibility?.reasons?.blockedUntilLegEnd === false, JSON.stringify(eligibilityResponse.body?.eligibility));
+    assert("previous-leg liabilities are absent from outstanding list", Array.isArray(obligationsResponse.body?.obligations?.outstanding) && obligationsResponse.body.obligations.outstanding.length === 0, JSON.stringify(obligationsResponse.body?.obligations));
   });
 
   section("release validation and visibility edge cases");

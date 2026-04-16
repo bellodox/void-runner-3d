@@ -164,6 +164,18 @@ async function readExpectedHashFromChain(name) {
   return parseChainHashValue(nameState.value);
 }
 
+async function isNameOwnedByLocalWallet(name) {
+  try {
+    const nameState = await callRpc("name_show", [name]);
+    return !!(nameState && nameState.ismine === true);
+  } catch (error) {
+    if (error && (error.code === -4 || error.code === -5 || error.code === -8)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 function buildIntegrityStatusPayload() {
   return {
     mode: integrityState.mode,
@@ -230,6 +242,29 @@ async function initializeIntegrityVerification() {
     !!integrityState.files.relay.actual &&
     !!integrityState.files.relay.expected &&
     integrityState.files.relay.actual === integrityState.files.relay.expected;
+
+  const expectedHashesMissing = !integrityState.files.game.expected || !integrityState.files.relay.expected;
+  if (expectedHashesMissing) {
+    let ownsHashNames = false;
+    try {
+      const [ownsGameHashName, ownsRelayHashName] = await Promise.all([
+        isNameOwnedByLocalWallet(GAME_HASH_NAME),
+        isNameOwnedByLocalWallet(RELAY_HASH_NAME)
+      ]);
+      ownsHashNames = ownsGameHashName && ownsRelayHashName;
+    } catch (error) {
+      integrityState.reason = error.message || "Failed to verify hash-name ownership";
+    }
+
+    if (ownsHashNames) {
+      integrityState.skipped = true;
+      integrityState.verified = true;
+      integrityState.readOnly = false;
+      integrityState.status = "skipped-owner-bootstrap";
+      integrityState.reason = "Integrity hashes missing on chain; local owner bootstrap access granted";
+      return;
+    }
+  }
 
   const verificationPassed = integrityState.files.game.match && integrityState.files.relay.match;
   integrityState.verified = verificationPassed;
@@ -663,12 +698,15 @@ async function submitLeaderboardScore(handle, difficulty, score) {
 
     const existingDifficultyScore = nextScores[difficulty];
     const nowTimestamp = Date.now();
+    const shouldPersistUpdatedScore = !existingDifficultyScore || score >= existingDifficultyScore.score;
 
-    if (!existingDifficultyScore || score >= existingDifficultyScore.score) {
+    if (shouldPersistUpdatedScore) {
       nextScores[difficulty] = {
         score,
         updatedAt: nowTimestamp
       };
+    } else {
+      return nextScores;
     }
 
     const serializedValue = serializeRecordValue(handle, nextScores);
@@ -1161,11 +1199,20 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && requestUrl.pathname === "/api/health") {
-      await callRpc("getblockcount", []);
+      let nodeStatus = "up";
+      let nodeError = null;
+      try {
+        await callRpc("getblockcount", []);
+      } catch (error) {
+        nodeStatus = "down";
+        nodeError = error && error.message ? String(error.message) : "Node unavailable";
+      }
+
       sendJson(response, 200, {
         ok: true,
         relay: "up",
-        node: "up",
+        node: nodeStatus,
+        nodeError,
         integrity: buildIntegrityStatusPayload()
       });
       return;
