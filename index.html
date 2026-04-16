@@ -131,6 +131,18 @@
       padding: 12px 22px;
     }
 
+    .action-btn.primary {
+      border-color: rgba(255, 200, 87, 0.72);
+      box-shadow: 0 0 20px rgba(255, 200, 87, 0.24);
+      color: #fff4dc;
+    }
+
+    .action-btn.secondary {
+      border-color: rgba(121, 215, 255, 0.35);
+      background: linear-gradient(180deg, rgba(17, 31, 51, 0.88), rgba(10, 18, 32, 0.92));
+      color: #cce8fa;
+    }
+
     .chain-board {
       margin-top: 18px;
       border: 1px solid rgba(121, 215, 255, 0.35);
@@ -167,6 +179,43 @@
     .release-board-grid {
       display: grid;
       gap: 8px;
+    }
+
+    .overlay-section-details {
+      margin: 12px 0 10px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      text-align: left;
+      overflow: hidden;
+    }
+
+    .overlay-section-details summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 10px 12px;
+      font-size: 0.86rem;
+      color: #c9ecff;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      user-select: none;
+      border-bottom: 1px solid rgba(121, 215, 255, 0.2);
+    }
+
+    .overlay-section-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .overlay-section-details > .overlay-section-body {
+      padding: 10px 12px;
+    }
+
+    .post-run-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin: 10px 0 8px;
     }
 
     .countdown-chip {
@@ -641,10 +690,17 @@
         <button class="difficulty-btn active" data-difficulty="normal">Normal</button>
         <button class="difficulty-btn" data-difficulty="hard">Hard</button>
       </div>
-      <button id="startBtn" class="action-btn">Start Game</button>
+      <button id="startBtn" class="action-btn primary">Start Game</button>
+
+      <div class="chain-board">
+        <h2 id="chainTitle">Top Players (Normal)</h2>
+        <p id="chainStatusText" class="status-line">Relay status: checking...</p>
+        <p id="relayModeText" class="relay-mode-pill" aria-live="polite"><span class="relay-mode-dot" aria-hidden="true"></span><span id="relayModeTextValue">Relay mode: checking...</span></p>
+        <ol id="chainLeaderboardList" class="chain-list"></ol>
+      </div>
 
       <div class="release-board" aria-live="polite">
-        <h2>Release Economy Snapshot</h2>
+        <h2>Your Current Round</h2>
         <div class="release-board-grid">
           <p id="menuCurrentRoundText">Round: loading...</p>
           <p id="menuRoundCountdownText">Round countdown: loading...</p>
@@ -655,18 +711,13 @@
         </div>
       </div>
 
-      <div class="recent-settled-board" aria-live="polite">
-        <h2>Recent Settled Rounds</h2>
-        <p id="recentSettledRoundsStatusText" class="recent-settled-status">Loading recent settlements...</p>
-        <ol id="recentSettledRoundsList" class="recent-settled-list"></ol>
-      </div>
-
-      <div class="chain-board">
-        <h2 id="chainTitle">Chain Leaderboard (Normal)</h2>
-        <p id="chainStatusText" class="status-line">Relay status: checking...</p>
-        <p id="relayModeText" class="relay-mode-pill" aria-live="polite"><span class="relay-mode-dot" aria-hidden="true"></span><span id="relayModeTextValue">Relay mode: checking...</span></p>
-        <ol id="chainLeaderboardList" class="chain-list"></ol>
-      </div>
+      <details class="overlay-section-details">
+        <summary>Recent Settled Rounds</summary>
+        <div class="overlay-section-body recent-settled-board" aria-live="polite">
+          <p id="recentSettledRoundsStatusText" class="recent-settled-status">Loading recent settlements...</p>
+          <ol id="recentSettledRoundsList" class="recent-settled-list"></ol>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -676,34 +727,39 @@
       <p id="finalScoreText" class="subtitle">Final Score: 00:00.000</p>
       <p id="scoreBreakdownText" class="subtitle">Survival 00:00.000 · Bonus 00:00.000 · Total 00:00.000</p>
       <p id="recordText" class="subtitle">Local Best Time: 00:00.000</p>
-      <div class="release-board" aria-live="polite">
-        <h2>Release Outcome</h2>
-        <div class="release-board-grid">
-          <p id="gameOverPlacementText">Current round placement: loading...</p>
-          <p id="gameOverOutcomeText">Reward/liability outcome: loading...</p>
-          <p id="gameOverObligationsText">Outstanding obligations: loading...</p>
-          <p id="gameOverBlockedText">Eligibility gate: loading...</p>
-          <p id="gameOverLegResetText">Next leg reset in blocks: loading...</p>
-        </div>
+      <div class="post-run-actions">
+        <button id="playAgainBtn" class="action-btn primary">Play Again</button>
+        <button id="mainMenuBtn" class="action-btn secondary">Main Menu</button>
       </div>
+      <div class="chain-submit">
+        <input id="playerInitialsInput" class="initials-input" type="text" maxlength="24" value="" placeholder="choose handle" autocomplete="off" spellcheck="false" />
+        <button id="registerChainPlayerBtn" class="action-btn">Register</button>
+        <button id="submitChainScoreBtn" class="action-btn primary">Submit to Chain</button>
+      </div>
+      <div id="handleLockIndicator" class="lock-indicator" style="display:none;">Handle locked after registration</div>
+      <p id="submitChainStatusText" class="status-line">Chain submission status: idle</p>
+      <p id="gameOverRelayModeText" class="relay-mode-pill" aria-live="polite"><span class="relay-mode-dot" aria-hidden="true"></span><span id="gameOverRelayModeTextValue">Relay mode: checking...</span></p>
+
       <div class="featured-rank-board" aria-live="polite">
         <h2>Featured Chart (Normal) Top 5</h2>
         <ol id="featuredRankList" class="featured-rank-list"></ol>
         <p id="featuredRankContextText" class="featured-rank-context">Loading featured rank...</p>
         <p id="featuredRankDeltaText" class="featured-rank-delta">&nbsp;</p>
       </div>
-      <div class="chain-submit">
-        <input id="playerInitialsInput" class="initials-input" type="text" maxlength="24" value="" placeholder="choose handle" autocomplete="off" spellcheck="false" />
-        <button id="registerChainPlayerBtn" class="action-btn">Register</button>
-        <button id="submitChainScoreBtn" class="action-btn">Submit to Chain</button>
-      </div>
-      <div id="handleLockIndicator" class="lock-indicator" style="display:none;">Handle locked after registration</div>
-      <p id="submitChainStatusText" class="status-line">Chain submission status: idle</p>
-      <p id="gameOverRelayModeText" class="relay-mode-pill" aria-live="polite"><span class="relay-mode-dot" aria-hidden="true"></span><span id="gameOverRelayModeTextValue">Relay mode: checking...</span></p>
-      <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
-        <button id="playAgainBtn" class="action-btn">Play Again</button>
-        <button id="mainMenuBtn" class="action-btn">Main Menu</button>
-      </div>
+
+      <details class="overlay-section-details">
+        <summary>Round Economy Details</summary>
+        <div class="overlay-section-body release-board" aria-live="polite">
+          <h2>Your Outcome</h2>
+          <div class="release-board-grid">
+            <p id="gameOverPlacementText">Current round placement: loading...</p>
+            <p id="gameOverOutcomeText">Reward/liability outcome: loading...</p>
+            <p id="gameOverObligationsText">Outstanding obligations: loading...</p>
+            <p id="gameOverBlockedText">Eligibility gate: loading...</p>
+            <p id="gameOverLegResetText">Next leg reset in blocks: loading...</p>
+          </div>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -1507,10 +1563,10 @@
 
       async function loadReleaseOverview() {
         setReleaseText(menuCurrentRoundText, "Round: loading...", "#9cc8e2");
-        setReleaseText(menuRoundCountdownText, "Round countdown: loading...", "#9cc8e2");
+        setReleaseText(menuRoundCountdownText, "Round ends: loading...", "#9cc8e2");
         setReleaseText(menuCurrentLegText, "Leg: loading...", "#9cc8e2");
-        setReleaseText(menuLegCountdownText, "Leg countdown: loading...", "#9cc8e2");
-        setReleaseText(menuRewardSummaryText, "Reward distribution: loading...", "#9cc8e2");
+        setReleaseText(menuLegCountdownText, "Leg ends: loading...", "#9cc8e2");
+        setReleaseText(menuRewardSummaryText, "Round distribution: loading...", "#9cc8e2");
         setRecentSettledStatus("Loading recent settlements...", "#9cc8e2");
         renderRecentSettledRounds([]);
 
@@ -1543,27 +1599,27 @@
           const hasAnyReleaseData = Boolean(round || leg || settlement || recentRounds.length || eligibility);
           if (!hasAnyReleaseData) throw new Error("No release data available");
 
-          setReleaseText(menuCurrentRoundText, `Round ${round?.id ?? "--"} · blocks ${formatBlockRange(round?.blockStart, round?.blockEnd)}`, "#dcefff");
-          setReleaseText(menuRoundCountdownText, `Round countdown: ${formatBlocksRemaining(round?.blocksRemaining)}`, "#dcefff");
-          setReleaseText(menuCurrentLegText, `Leg ${leg?.id ?? "--"} · blocks ${formatBlockRange(leg?.blockStart, leg?.blockEnd)}`, "#dcefff");
-          setReleaseText(menuLegCountdownText, `Leg countdown: ${formatBlocksRemaining(leg?.blocksRemaining)}`, "#dcefff");
-          setReleaseText(menuRewardSummaryText, summarizeDistribution(settlement), "#dcefff");
+          setReleaseText(menuCurrentRoundText, `Round #${round?.id ?? "--"} · ${formatBlockRange(round?.blockStart, round?.blockEnd)}`, "#dcefff");
+          setReleaseText(menuRoundCountdownText, `Round ends: ${formatBlocksRemaining(round?.blocksRemaining)}`, "#dcefff");
+          setReleaseText(menuCurrentLegText, `Leg #${leg?.id ?? "--"} · ${formatBlockRange(leg?.blockStart, leg?.blockEnd)}`, "#dcefff");
+          setReleaseText(menuLegCountdownText, `Leg ends: ${formatBlocksRemaining(leg?.blocksRemaining)}`, "#dcefff");
+          setReleaseText(menuRewardSummaryText, summarizeDistribution(settlement).replace("Reward distribution: ", "Round distribution: "), "#dcefff");
 
           if (eligibility) {
             const eligibilityLabel = eligibility.eligible
-              ? `Eligibility: eligible for current leg ${eligibility.legId}`
+              ? `Eligibility: ready for leg ${eligibility.legId}`
               : `Eligibility: blocked in leg ${eligibility.legId} (resolve obligations)`;
             setReleaseText(menuEligibilityText, eligibilityLabel, eligibility.eligible ? "#65f5a8" : "#ffc857");
           }
 
-          setRecentSettledStatus(`Loaded ${recentRounds.length} settled rounds`, "#65f5a8");
+          setRecentSettledStatus(`${recentRounds.length} settled rounds loaded`, "#65f5a8");
           renderRecentSettledRounds(recentRounds);
         } catch {
           setReleaseText(menuCurrentRoundText, "Round: relay offline", "#ffb0b0");
-          setReleaseText(menuRoundCountdownText, "Round countdown: unavailable", "#ffb0b0");
+          setReleaseText(menuRoundCountdownText, "Round ends: unavailable", "#ffb0b0");
           setReleaseText(menuCurrentLegText, "Leg: relay offline", "#ffb0b0");
-          setReleaseText(menuLegCountdownText, "Leg countdown: unavailable", "#ffb0b0");
-          setReleaseText(menuRewardSummaryText, "Reward distribution: unavailable", "#ffb0b0");
+          setReleaseText(menuLegCountdownText, "Leg ends: unavailable", "#ffb0b0");
+          setReleaseText(menuRewardSummaryText, "Round distribution: unavailable", "#ffb0b0");
           if (activeHandle) {
             setReleaseText(menuEligibilityText, `Eligibility: unavailable for ${activeHandle}`, "#ffb0b0");
           }
@@ -1573,11 +1629,11 @@
       }
 
       async function loadGameOverReleaseSummary() {
-        setReleaseText(gameOverPlacementText, "Current round placement: loading...", "#9cc8e2");
-        setReleaseText(gameOverOutcomeText, "Reward/liability outcome: loading...", "#9cc8e2");
-        setReleaseText(gameOverObligationsText, "Outstanding obligations: loading...", "#9cc8e2");
-        setReleaseText(gameOverBlockedText, "Eligibility gate: loading...", "#9cc8e2");
-        setReleaseText(gameOverLegResetText, "Next leg reset in blocks: loading...", "#9cc8e2");
+        setReleaseText(gameOverPlacementText, "Placement now: loading...", "#9cc8e2");
+        setReleaseText(gameOverOutcomeText, "Outcome: loading...", "#9cc8e2");
+        setReleaseText(gameOverObligationsText, "Obligations: loading...", "#9cc8e2");
+        setReleaseText(gameOverBlockedText, "Eligibility: loading...", "#9cc8e2");
+        setReleaseText(gameOverLegResetText, "Leg reset: loading...", "#9cc8e2");
 
         const handle = getActiveHandleForRelease();
 
@@ -1610,54 +1666,54 @@
           const eligibility = eligibilityPayload && eligibilityPayload.eligibility ? eligibilityPayload.eligibility : null;
 
           if (handle && playerPlacement) {
-            setReleaseText(gameOverPlacementText, `Current round placement: #${playerPlacement.rank} (${playerPlacement.handle})`, "#dcefff");
+            setReleaseText(gameOverPlacementText, `Placement now: #${playerPlacement.rank} (${playerPlacement.handle})`, "#dcefff");
           } else if (handle) {
-            setReleaseText(gameOverPlacementText, `Current round placement: ${handle} not in top standings`, "#a6c6dd");
+            setReleaseText(gameOverPlacementText, `Placement now: ${handle} is outside top standings`, "#a6c6dd");
           } else {
-            setReleaseText(gameOverPlacementText, "Current round placement: register a handle to track placement", "#a6c6dd");
+            setReleaseText(gameOverPlacementText, "Placement now: register a handle to track ranking", "#a6c6dd");
           }
 
           if (handle && settlement) {
             const winnerEntry = Array.isArray(settlement.winners) ? settlement.winners.find((entry) => entry.handle === handle) : null;
             const liabilityEntry = Array.isArray(settlement.liabilities) ? settlement.liabilities.find((entry) => entry.handle === handle) : null;
             if (winnerEntry) {
-              setReleaseText(gameOverOutcomeText, `Reward/liability outcome: reward +${winnerEntry.amount} at rank #${winnerEntry.rank}`, "#65f5a8");
+              setReleaseText(gameOverOutcomeText, `Outcome: reward +${winnerEntry.amount} at rank #${winnerEntry.rank}`, "#65f5a8");
             } else if (liabilityEntry) {
-              setReleaseText(gameOverOutcomeText, `Reward/liability outcome: liability ${liabilityEntry.amount} at rank #${liabilityEntry.rank}`, "#ffc857");
+              setReleaseText(gameOverOutcomeText, `Outcome: liability ${liabilityEntry.amount} at rank #${liabilityEntry.rank}`, "#ffc857");
             } else {
-              setReleaseText(gameOverOutcomeText, "Reward/liability outcome: no direct settlement entry", "#a6c6dd");
+              setReleaseText(gameOverOutcomeText, "Outcome: no direct settlement entry", "#a6c6dd");
             }
           } else {
-            setReleaseText(gameOverOutcomeText, "Reward/liability outcome: unavailable", "#a6c6dd");
+            setReleaseText(gameOverOutcomeText, "Outcome: unavailable", "#a6c6dd");
           }
 
           const outstanding = Array.isArray(obligations?.outstanding) ? obligations.outstanding : [];
           if (!handle) {
-            setReleaseText(gameOverObligationsText, "Outstanding obligations: register a handle to view obligations", "#a6c6dd");
+            setReleaseText(gameOverObligationsText, "Obligations: register a handle to view details", "#a6c6dd");
           } else if (!outstanding.length) {
-            setReleaseText(gameOverObligationsText, "Outstanding obligations: none", "#65f5a8");
+            setReleaseText(gameOverObligationsText, "Obligations: none", "#65f5a8");
           } else {
             const outstandingTotal = outstanding.reduce((sum, row) => sum + Math.max(0, (Number(row.amountDue) || 0) - (Number(row.amountPaid) || 0)), 0);
-            setReleaseText(gameOverObligationsText, `Outstanding obligations: ${outstanding.length} due · total ${outstandingTotal}`, "#ffc857");
+            setReleaseText(gameOverObligationsText, `Obligations: ${outstanding.length} due · total ${outstandingTotal}`, "#ffc857");
           }
 
           if (eligibility) {
             if (eligibility.eligible) {
-              setReleaseText(gameOverBlockedText, "Eligibility gate: eligible for next run", "#65f5a8");
+              setReleaseText(gameOverBlockedText, "Eligibility: ready for next run", "#65f5a8");
             } else {
-              setReleaseText(gameOverBlockedText, "Eligibility gate: blocked until leg end (unpaid/blocked status active)", "#ffb0b0");
+              setReleaseText(gameOverBlockedText, "Eligibility: blocked until leg end", "#ffb0b0");
             }
           } else {
-            setReleaseText(gameOverBlockedText, "Eligibility gate: unavailable", "#a6c6dd");
+            setReleaseText(gameOverBlockedText, "Eligibility: unavailable", "#a6c6dd");
           }
 
-          setReleaseText(gameOverLegResetText, `Next leg reset in blocks: ${formatBlocksRemaining(currentLeg?.blocksRemaining)}`, "#dcefff");
+          setReleaseText(gameOverLegResetText, `Leg reset: ${formatBlocksRemaining(currentLeg?.blocksRemaining)}`, "#dcefff");
         } catch {
-          setReleaseText(gameOverPlacementText, "Current round placement: unavailable", "#ffb0b0");
-          setReleaseText(gameOverOutcomeText, "Reward/liability outcome: unavailable", "#ffb0b0");
-          setReleaseText(gameOverObligationsText, "Outstanding obligations: unavailable", "#ffb0b0");
-          setReleaseText(gameOverBlockedText, "Eligibility gate: unavailable", "#ffb0b0");
-          setReleaseText(gameOverLegResetText, "Next leg reset in blocks: unavailable", "#ffb0b0");
+          setReleaseText(gameOverPlacementText, "Placement now: unavailable", "#ffb0b0");
+          setReleaseText(gameOverOutcomeText, "Outcome: unavailable", "#ffb0b0");
+          setReleaseText(gameOverObligationsText, "Obligations: unavailable", "#ffb0b0");
+          setReleaseText(gameOverBlockedText, "Eligibility: unavailable", "#ffb0b0");
+          setReleaseText(gameOverLegResetText, "Leg reset: unavailable", "#ffb0b0");
         }
       }
 
@@ -1719,7 +1775,7 @@
       }
 
       function renderChainLeaderboard() {
-        chainTitle.textContent = `Chain Leaderboard (${DIFFICULTY[selectedDifficulty].label})`;
+        chainTitle.textContent = `Top Players (${DIFFICULTY[selectedDifficulty].label})`;
         chainLeaderboardList.innerHTML = "";
 
         if (!chainEntries.length) {
