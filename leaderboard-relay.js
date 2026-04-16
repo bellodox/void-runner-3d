@@ -994,7 +994,32 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
 }
 
 async function ensureRoundFinalized(roundId, currentBlockHeight) {
-  return deriveSettlementForRound(roundId, currentBlockHeight);
+  const roundRange = getRoundBlockRange(roundId);
+  if (currentBlockHeight <= roundRange.blockEnd) {
+    return null;
+  }
+
+  const settlementName = `${RELEASE_PREFIX}settlements/${roundId}`;
+  const existingSettlementState = await readName(settlementName);
+  if (existingSettlementState.exists) {
+    const existingSettlementPayload = parseRoundSettlementValue(existingSettlementState.value, roundId);
+    if (existingSettlementPayload) {
+      return existingSettlementPayload;
+    }
+  }
+
+  const derivedSettlementPayload = await deriveSettlementForRound(roundId, currentBlockHeight);
+  if (!derivedSettlementPayload) {
+    return null;
+  }
+
+  try {
+    await ensureNameRegistered(settlementName, serializeRoundSettlementValue(derivedSettlementPayload));
+  } catch {
+    // Fall through to returning the derived payload to keep read behavior available.
+  }
+
+  return derivedSettlementPayload;
 }
 
 async function getCurrentRoundAndLegPayload(currentBlockHeight) {

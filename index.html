@@ -606,6 +606,7 @@
       <div class="chain-board">
         <h2 id="chainTitle">Chain Leaderboard (Normal)</h2>
         <p id="chainStatusText" class="status-line">Relay status: checking...</p>
+        <p id="relayModeText" class="status-line">Relay mode: checking...</p>
         <ol id="chainLeaderboardList" class="chain-list"></ol>
       </div>
     </div>
@@ -709,6 +710,7 @@
       const difficultyButtons = Array.from(document.querySelectorAll(".difficulty-btn"));
       const chainTitle = document.getElementById("chainTitle");
       const chainStatusText = document.getElementById("chainStatusText");
+      const relayModeText = document.getElementById("relayModeText");
       const chainLeaderboardList = document.getElementById("chainLeaderboardList");
       const playerInitialsInput = document.getElementById("playerInitialsInput");
       const registerChainPlayerBtn = document.getElementById("registerChainPlayerBtn");
@@ -1238,6 +1240,49 @@
         submitChainStatusText.style.color = color;
       }
 
+      function setRelayModeStatus(text, color) {
+        relayModeText.textContent = `Relay mode: ${text}`;
+        relayModeText.style.color = color;
+      }
+
+      function getApiErrorText(payload, fallbackText) {
+        if (payload && typeof payload.error === "string" && payload.error.trim()) {
+          return payload.error.trim().toLowerCase();
+        }
+        return fallbackText;
+      }
+
+      function getRequestFailureText(error, fallbackText) {
+        const errorMessage = error && typeof error.message === "string" ? error.message.trim() : "";
+        if (!errorMessage) return fallbackText;
+        return errorMessage.toLowerCase().startsWith("http ") ? fallbackText : errorMessage;
+      }
+
+      async function refreshRelayRuntimeMode() {
+        try {
+          const response = await fetch(`${RELAY_BASE_URL}/health`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          const integrity = payload && payload.integrity ? payload.integrity : null;
+          const integrityStatus = integrity && typeof integrity.status === "string" ? integrity.status : "unknown";
+          const isReadOnly = Boolean(integrity && integrity.readOnly);
+
+          if (isReadOnly) {
+            setRelayModeStatus(`read-only (${integrityStatus})`, "#ffc857");
+            return;
+          }
+
+          if (integrityStatus === "verified" || integrityStatus === "skipped") {
+            setRelayModeStatus(`full access (${integrityStatus})`, "#65f5a8");
+            return;
+          }
+
+          setRelayModeStatus(`online (${integrityStatus})`, "#a6c6dd");
+        } catch {
+          setRelayModeStatus("unavailable", "#ffb0b0");
+        }
+      }
+
       function updateSubmitButtonState() {
         const hasValidScore = Number.isFinite(lastFinalScore) && lastFinalScore > 0;
         const existingDifficultyRecord = registeredPlayerScores[selectedDifficulty];
@@ -1682,6 +1727,7 @@
       async function loadChainLeaderboard() {
         if (!allowedDifficultyKeys.has(selectedDifficulty)) return;
         setChainStatus("loading leaderboard...", "#a6c6dd");
+        refreshRelayRuntimeMode();
 
         try {
           const response = await fetch(`${RELAY_BASE_URL}/leaderboard?difficulty=${selectedDifficulty}`);
@@ -1785,12 +1831,12 @@
             return;
           }
 
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          if (!response.ok) throw new Error(getApiErrorText(payload, `http ${response.status}`));
 
           localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
           applyPlayerStatus(player);
           setSubmitStatus(`registered as p/${player?.handle || handle}`, "#65f5a8");
-        } catch {
+        } catch (error) {
           clearRegisteredPlayerState();
           playerInitialsInput.disabled = false;
           playerInitialsInput.title = "";
@@ -1799,7 +1845,7 @@
           const lockIndicator = document.getElementById("handleLockIndicator");
           if (lockIndicator) lockIndicator.style.display = "none";
           updateSubmitButtonState();
-          setSubmitStatus("registration failed (relay or node unavailable)", "#ffb0b0");
+          setSubmitStatus(`registration failed (${getRequestFailureText(error, "relay or node unavailable")})`, "#ffb0b0");
         } finally {
           registerChainPlayerBtn.disabled = false;
         }
@@ -1838,8 +1884,9 @@
             })
           });
 
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const payload = await response.json();
+          const payload = await response.json().catch(() => null);
+
+          if (!response.ok) throw new Error(getApiErrorText(payload, `http ${response.status}`));
           chainEntries = Array.isArray(payload.entries) ? payload.entries : [];
           localStorage.setItem(PLAYER_HANDLE_STORAGE_KEY, handle);
           applyPlayerStatus(payload.player || null);
@@ -1847,9 +1894,10 @@
           setSubmitStatus("submitted", "#65f5a8");
           renderChainLeaderboard();
           loadFeaturedRankContext();
-        } catch {
-          setSubmitStatus("failed (relay or node unavailable)", "#ffb0b0");
-          setChainStatus("offline (relay or node unavailable)", "#ffb0b0");
+        } catch (error) {
+          setSubmitStatus(`failed (${getRequestFailureText(error, "relay or node unavailable")})`, "#ffb0b0");
+          setChainStatus("offline", "#ffb0b0");
+          refreshRelayRuntimeMode();
         } finally {
           submitChainScoreBtn.disabled = false;
         }

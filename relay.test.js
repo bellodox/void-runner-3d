@@ -362,6 +362,26 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
   };
 }
 
+function parseRoundSettlementValue(value, expectedRoundId) {
+  if (typeof value !== "string" || !value) return null;
+  let parsedValue;
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!parsedValue || typeof parsedValue !== "object") return null;
+  if (parsedValue.version !== 1 || parsedValue.game !== "voidrunner3d") return null;
+  const roundId = Number(parsedValue.roundId);
+  if (!Number.isInteger(roundId) || roundId < 0 || roundId !== expectedRoundId) return null;
+  if (typeof parsedValue.status !== "string") return null;
+  return parsedValue;
+}
+
+function serializeRoundSettlementValue(settlementPayload) {
+  return JSON.stringify(settlementPayload);
+}
+
 function applyScoreSubmission(existingRecord, handle, difficulty, score, timestamp) {
   const parsedRecord = existingRecord || {
     handle,
@@ -676,6 +696,25 @@ section("release settlement derivation");
   assert("insufficient participants produce closed-no-settlement", insufficientSettlement.status === "closed-no-settlement", JSON.stringify(insufficientSettlement));
   assert("insufficient participants expose explicit reason", insufficientSettlement.reason === "insufficient-qualified-participants", JSON.stringify(insufficientSettlement));
   assert("insufficient participants produce no winners or liabilities", insufficientSettlement.winners.length === 0 && insufficientSettlement.liabilities.length === 0, JSON.stringify(insufficientSettlement));
+}
+{
+  const settledPayload = buildSettlementFromStandings({
+    roundId: 101,
+    legId: 8,
+    roundStart: 12120,
+    roundEnd: 12239,
+    entries: Array.from({ length: 10 }, (_, index) => ({
+      rank: index + 1,
+      handle: `p${String(index).padStart(2, "0")}`,
+      score: 100 - index
+    }))
+  }, 12345);
+
+  const serializedSettlement = serializeRoundSettlementValue(settledPayload);
+  const parsedSettlement = parseRoundSettlementValue(serializedSettlement, 101);
+  assert("round settlement serialization preserves settled status", parsedSettlement?.status === "settled", JSON.stringify(parsedSettlement));
+  assert("round settlement serialization preserves winner count", Array.isArray(parsedSettlement?.winners) && parsedSettlement.winners.length === 4, JSON.stringify(parsedSettlement?.winners));
+  assert("round settlement parser rejects mismatched round ids", parseRoundSettlementValue(serializedSettlement, 102) === null);
 }
 {
   const settledPayload = buildSettlementFromStandings({

@@ -2,6 +2,11 @@
 
 ## [0.1.0] - 2026-04-14
 
+### Final release polish
+- Updated [`index.html`](index.html) so the chain panel shows relay mode/status to players, refreshes that mode during leaderboard loads and submit-failure recovery, and surfaces clearer relay API error messages for registration and submission failures when available.
+- Updated [`leaderboard-relay.js`](leaderboard-relay.js) so round finalization persists settlement records on-chain and later settlement reads reuse stored records when present.
+- Added targeted settlement serialization/parsing coverage in [`relay.test.js`](relay.test.js) for the persisted settlement format.
+
 ### Backend
 - Shipped the public release relay in [`leaderboard-relay.js`](leaderboard-relay.js) as the authoritative runtime for health, leaderboard reads, player registration, player-owned score storage, encoded record envelopes, and chain-scan leaderboard reconstruction.
 - Shipped deterministic release-economy support in [`leaderboard-relay.js`](leaderboard-relay.js:55) with block-derived rounds and legs, current round and current leg pointers, current standings, round settlement, player eligibility, player obligations, and recent settled rounds.
