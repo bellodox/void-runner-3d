@@ -1,4 +1,4 @@
-# Void Runner 3D — Implementation Plan (Block-Based, On-Chain Only)
+# Void Runner 3D — Release Design Reference for v0.2.0
 
 ## Core Principles
 
@@ -6,6 +6,7 @@
 * The system is **deterministic** and derived from **block height**, not wall-clock time.
 * No admin intervention is required for round progression, settlement visibility, or penalty enforcement.
 * The relay acts as a **stateless interpreter** of on-chain data.
+* In `v0.2.0`, persisted settlement reuse is protected by an integrity envelope so stored settlement payloads can be verified before the relay trusts them.
 
 ---
 
@@ -90,13 +91,12 @@ Store:
 * tie resolution outcome
 
 ### Settlement Records
-
 Store:
 
 * winners (top 4) and reward amounts
 * losers (bottom 6) and obligations
 * settlement status (pending / partial / complete)
-
+* an integrity envelope containing encoded payload, salt, and digest metadata for persisted settlement verification in the shipped `v0.2.0` relay
 ### Player Leg Status
 
 Store:
@@ -175,6 +175,7 @@ Unpaid players:
 * Reward distribution
 * Player eligibility status
 * Recent settled rounds
+* Improved release board layout for clearer reading in the shipped `v0.2.0` UI
 
 ### Game Over Screen
 
@@ -183,11 +184,13 @@ Unpaid players:
 * Outstanding obligations (if any)
 * Penalty/block status
 * Time until next leg reset (in blocks)
+* Expandable details sections so additional release context stays available without crowding the default summary
 
 ### Gameplay
 
 * No reward UI elements shown
 * Gameplay remains clean and uninterrupted
+* The active registered handle can stay visible through the player badge in the corner controls
 
 ---
 

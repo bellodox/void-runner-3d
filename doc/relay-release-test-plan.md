@@ -1,7 +1,7 @@
 # Relay Release QA Test Plan
 
 ## Scope
-This plan validates deterministic round/leg derivation, settlement generation/reuse, eligibility/obligation behavior, API integration, and UI integration tied to release economy behavior.
+This plan validates deterministic round/leg derivation, settlement generation, eligibility/obligation behavior, API integration, and UI integration tied to release economy behavior.
 
 Primary implementation under test:
 - [`leaderboard-relay.js`](leaderboard-relay.js)
@@ -15,8 +15,8 @@ Primary automated suites:
 
 ## Requirement Cross-Checks
 - Deterministic rounds/legs from README release model: [`README.md`](README.md:12)
-- Settlement model schedules and minimum participants: [`README.md`](README.md:22)
-- Final-release persistence and UI polish changes: [`CHANGELOG.md`](CHANGELOG.md:5)
+- Settlement model schedules, minimum participants, and on-demand derivation: [`README.md`](README.md:22)
+- `v0.2.0` release packaging and UI/release-hardening notes: [`CHANGELOG.md`](CHANGELOG.md:3)
 
 ## Test Matrix (Pass/Fail Criteria)
 
@@ -42,15 +42,7 @@ Primary automated suites:
 - **Fail criteria**
   - Any payout/liability schedule drift or invalid status transition
 
-### 3) Settlement persistence reuse
-- Added persisted-record reuse checks in [`relay-http.test.js`](relay-http.test.js:680)
-- **Pass criteria**
-  - Existing settlement under release namespace is reused (no regeneration drift)
-  - Persisted payload fields (e.g. `generatedAtBlock`) remain intact
-- **Fail criteria**
-  - Endpoint returns recomputed payload despite valid stored settlement
-
-### 4) Eligibility and obligations lifecycle
+### 3) Eligibility and obligations lifecycle
 - Coverage source: eligibility/obligations checks in [`relay-http.test.js`](relay-http.test.js:648)
 - Added leg-transition clearing check in [`relay-http.test.js`](relay-http.test.js:715)
 - **Pass criteria**
@@ -59,7 +51,7 @@ Primary automated suites:
 - **Fail criteria**
   - Blocked status persists incorrectly across leg rollover
 
-### 5) Tie and ordering determinism
+### 4) Tie and ordering determinism
 - Existing tie checks in [`relay.test.js`](relay.test.js:640)
 - Added standings tie-break checks in [`relay-http.test.js`](relay-http.test.js:699)
 - **Pass criteria**
@@ -69,7 +61,7 @@ Primary automated suites:
 - **Fail criteria**
   - Non-deterministic ordering across repeated runs
 
-### 6) Property-based invariant checks
+### 5) Property-based invariant checks
 - Added randomized invariant suites in [`relay.test.js`](relay.test.js:740)
 - **Pass criteria**
   - 500 random round/leg samples satisfy containment and range-width invariants
@@ -77,20 +69,21 @@ Primary automated suites:
 - **Fail criteria**
   - Any invariant breach under randomized sample set
 
-### 7) Frontend integration with relay model
+### 6) Frontend integration with relay model
 - Coverage source: release widget and player-flow checks in [`game.test.js`](game.test.js:173)
 - **Pass criteria**
   - Menu/game-over release widgets render expected text blocks
+  - Expandable game-over details and improved release board layout preserve readable release context
+  - Player handle badge remains visible in the active UI
   - Featured rank context appears from relay-backed data
   - Relay/API failure noise does not trigger false JS-error test failures
 - **Fail criteria**
-  - Missing release widgets or uncaught runtime JS failures
+  - Missing release widgets, broken details sections, missing handle visibility, or uncaught runtime JS failures
 
 ## Critical Failure Modes Prioritized
 - Invalid round/leg transition around exact boundaries
 - Settlement schedule corruption
 - Eligibility blocked-state corruption across leg transitions
-- Persisted-settlement read path regressions
 - Tie-break non-determinism
 
 ## Determinism and Mocking Strategy
@@ -107,10 +100,11 @@ Primary automated suites:
   - Uploads coverage HTML artifact
 
 ## Latest Execution Evidence
-- `npm run validate:release` succeeded
+- `npm run validate:release` succeeded for the shipped `v0.2.0` release candidate
 - `npm run coverage:relay` succeeded
 - Updated totals include:
-  - [`relay.test.js`](relay.test.js): 54 passed
-  - [`relay-http.test.js`](relay-http.test.js): 154 passed
+  - [`relay.test.js`](relay.test.js): 55 passed
+  - [`relay-http.test.js`](relay-http.test.js): 155 passed
   - [`admin-relay.test.js`](admin-relay.test.js): 9 passed
   - [`game.test.js`](game.test.js): 68 passed
+  - combined release validation: 287 passed

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0] - 2026-04-17
+
+### Release settlement model
+- Removed settlement-name generation and reuse from [`ensureRoundFinalized()`](leaderboard-relay.js:1034), so the public relay no longer writes or trusts `g/voidrunner3d/release/v1/settlements/*` records.
+- Shipped `v0.2.0` round settlements as fully derived responses built on demand from participant-owned `g/voidrunner3d/<handle>/record` names, current block height, and the deterministic payout/liability rules in [`buildSettlementFromStandings()`](leaderboard-relay.js:982).
+- Simplified the release model documentation and tests so settlement behavior now reflects the actual source of truth: participant score records plus deterministic round math.
+
+### Frontend and UX
+- Added expandable details sections to the game-over release summary in [`index.html`](index.html) so post-run release data is easier to inspect without overloading the default game-over layout.
+- Improved the release board layout in [`index.html`](index.html) for clearer leaderboard and release-economy presentation during the shipped `v0.2.0` flow.
+- Added a player handle badge to the in-game corner controls in [`index.html`](index.html) so the active registered handle remains visible during play sessions.
+- Preserved the relay mode status pill behavior surfaced in the chain panel and game-over state from the late `v0.1.0` UI updates in [`index.html`](index.html).
+
+### Validation and release packaging
+- Shipped package version `0.2.0` in [`package.json`](package.json:4).
+- Continued to use the release validation workflow in [`validate:release`](package.json:13) for relay, HTTP, admin, and gameplay coverage before shipping.
+- Latest relay-focused validation for the shipped `v0.2.0` state: [`relay.test.js`](relay.test.js) 55 passed, 0 failed; [`relay-http.test.js`](relay-http.test.js) 155 passed, 0 failed.
+
 ## [0.1.0] - 2026-04-14
 
 ### Final release polish

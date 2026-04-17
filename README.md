@@ -1,11 +1,11 @@
-# Void Runner 3D v0.1.0
+# Void Runner 3D v0.2.0
 
 ## Overview
 - [`index.html`](index.html) is the shipped single-file browser client.
 - [`leaderboard-relay.js`](leaderboard-relay.js) is the authoritative public relay for leaderboard reads, player registration, player-owned score submission, integrity enforcement, and release economy views.
-- [`admin-relay.js`](admin-relay.js) is limited to diagnostics-only health reporting when `ADMIN=true`; it is not an authoritative economy service in `v0.1.0`.
+- [`admin-relay.js`](admin-relay.js) is limited to diagnostics-only health reporting when `ADMIN=true`; it is not an authoritative economy service in `v0.2.0`.
 
-The shipped `v0.1.0` runtime matches the release-track implementation in code rather than the earlier MVP prize-window model.
+The shipped `v0.2.0` runtime keeps the release-track implementation from `v0.1.0` and adds UI polish for player visibility and post-run inspection while simplifying settlement handling to pure on-demand derivation.
 
 ## Shipped release model
 
@@ -20,13 +20,15 @@ The release economy is derived from block height in [`leaderboard-relay.js`](lea
 Round and leg IDs, block ranges, and remaining blocks are derived by the relay at runtime through [`getRoundIdFromBlockHeight()`](leaderboard-relay.js:360), [`getLegIdFromBlockHeight()`](leaderboard-relay.js:364), [`getRoundBlockRange()`](leaderboard-relay.js:368), and [`getLegBlockRange()`](leaderboard-relay.js:376).
 
 ### Settlement model
-The public relay derives release settlements from current block height and player-owned records via [`ensureRoundFinalized()`](leaderboard-relay.js:987).
+The public relay derives release settlements from current block height and player-owned records via [`ensureRoundFinalized()`](leaderboard-relay.js:1089).
 
 If a closed round has at least 10 qualified participants, the relay derives:
-- top 4 winner payouts: 100, 70, 20, 10 ROD via [`RELEASE_PAYOUTS`](leaderboard-relay.js:60)
-- bottom 6 liabilities: 28, 30, 33, 35, 36, 38 ROD via [`RELEASE_LIABILITIES`](leaderboard-relay.js:61)
+- top 4 winner payouts: 100, 70, 20, 10 ROD via [`RELEASE_PAYOUTS`](leaderboard-relay.js:62)
+- bottom 6 liabilities: 28, 30, 33, 35, 36, 38 ROD via [`RELEASE_LIABILITIES`](leaderboard-relay.js:63)
 
-If a round closes without enough qualified players, the settlement is returned as `closed-no-settlement` by [`buildSettlementFromStandings()`](leaderboard-relay.js:912).
+If a round closes without enough qualified players, the settlement is returned as `closed-no-settlement` by [`buildSettlementFromStandings()`](leaderboard-relay.js:1037).
+
+In the shipped `v0.2.0` runtime, settlements are not persisted or reused from `g/voidrunner3d/release/v1/settlements/*`. They are derived on demand from the participant-owned `g/voidrunner3d/<handle>/record` names and the deterministic round rules.
 
 ### Player state model
 The shipped runtime keeps the player-owned leaderboard model:
@@ -83,10 +85,10 @@ Supported integrity modes:
 
 When integrity fails in `warn` or `strict`, mutating API requests are blocked by the read-only guard in [`isMutatingRequest()`](leaderboard-relay.js:159) and the request gate in [`server.createServer()`](leaderboard-relay.js:1214).
 
-## Frontend behavior in v0.1.0
+## Frontend behavior in v0.2.0
 
 ### Menu overlay
-The menu now shows release-economy data rather than MVP prize windows.
+The menu continues to show release-economy data rather than MVP prize windows.
 
 Shipped widgets in [`index.html`](index.html:572):
 - current round text
@@ -101,12 +103,13 @@ The menu also shows recent settled rounds in [`index.html`](index.html:584) and 
 Release overview data is loaded by [`loadReleaseOverview()`](index.html:1353).
 
 ### Game-over overlay
-The game-over panel shows release outcome data in [`index.html`](index.html:604):
+The game-over panel shows release outcome data in [`index.html`](index.html):
 - current round placement
 - reward or liability outcome
 - outstanding obligations
 - eligibility gate / blocked status
 - next leg reset countdown
+- expandable details sections for inspecting release summary data with less default clutter
 
 That state is loaded through [`loadGameOverReleaseSummary()`](index.html:1411).
 
@@ -126,12 +129,13 @@ The browser client keeps the shipped registration and player-owned submission wo
 - registration flow in [`registerPlayerForChain()`](index.html:1720)
 - score submission flow in [`submitScoreToChain()`](index.html:1781)
 - player status refresh in [`refreshPlayerStatus()`](index.html:1676)
+- active handle visibility through the player badge in the corner controls in [`index.html`](index.html)
 
 Registered handles are locked in the UI after successful registration in [`applyPlayerStatus()`](index.html:1489).
 
 ## Diagnostics-only admin relay
 
-[`admin-relay.js`](admin-relay.js) is intentionally reduced in `v0.1.0`.
+[`admin-relay.js`](admin-relay.js) is intentionally reduced in `v0.2.0`.
 
 When `ADMIN=true`, it exposes:
 - `GET /api/health` with `scope: "diagnostics-only"` via [`/api/health`](admin-relay.js:116)
@@ -168,11 +172,11 @@ It runs:
 - [`game.test.js`](game.test.js)
 
 Latest validated results for the shipped release state:
-- [`relay.test.js`](relay.test.js): 49 passed, 0 failed
-- [`relay-http.test.js`](relay-http.test.js): 137 passed, 0 failed
+- [`relay.test.js`](relay.test.js): 55 passed, 0 failed
+- [`relay-http.test.js`](relay-http.test.js): 155 passed, 0 failed
 - [`admin-relay.test.js`](admin-relay.test.js): 9 passed, 0 failed
 - [`game.test.js`](game.test.js): 68 passed, 0 failed
-- combined release validation: 261 passed, 0 failed
+- combined release validation: 287 passed, 0 failed
 
 ## Project files
 - [`index.html`](index.html) — shipped browser client
