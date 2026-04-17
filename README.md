@@ -178,6 +178,9 @@ Latest validated results for the shipped release state:
 - [`game.test.js`](game.test.js): 68 passed, 0 failed
 - combined release validation: 287 passed, 0 failed
 
+## Planned follow-up
+- Nostr-based notifications are planned for future release work, covering new-leg start alerts, beaten-record alerts, and bottom-of-leaderboard alerts for registered players, with the roadmap tracked in [`doc/sprint-map.md`](doc/sprint-map.md:126).
+
 ## Project files
 - [`index.html`](index.html) — shipped browser client
 - [`leaderboard-relay.js`](leaderboard-relay.js) — public release relay

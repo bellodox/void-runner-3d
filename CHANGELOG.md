@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Planned
+- Added a documentation todo for Nostr-based notifications covering new-leg start alerts, beaten-record alerts, and bottom-of-leaderboard alerts in [`doc/sprint-map.md`](doc/sprint-map.md).
+
 ## [0.2.0] - 2026-04-17
 
 ### Release settlement model

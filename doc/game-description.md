@@ -68,3 +68,5 @@ Void Runner 3D is a single-file web game implemented in [`index.html`](../index.
 
 ### 5. Community-facing version
 Void Runner 3D is for players who love pure skill-based score chasing but also want visible, transparent competition. You can jump in instantly, survive the asteroid field, refine your movement, and keep everything local—or register a handle, post your best score, and track your standing in a public release cycle with round, leg, settlement, and eligibility context exposed in the menu and game-over screens via [`loadReleaseOverview()`](../index.html:1376) and [`loadGameOverReleaseSummary()`](../index.html:1434). The reward system keeps the stakes high by rewarding top-four placements in qualified rounds and assigning bottom-six liabilities that can affect future eligibility if left unresolved, consistent with [`README.md`](../README.md:25) and [`doc/release-plan.md`](./release-plan.md:54).
+
+A planned follow-up documentation item adds Nostr-based opt-in notifications for major competitive changes such as new leg starts, record losses, and falling to the bottom of the leaderboard, as tracked in [`doc/sprint-map.md`](./sprint-map.md:126).

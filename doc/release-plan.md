@@ -230,6 +230,18 @@ Optional:
 
 ---
 
+## Planned notification extension
+
+A future notification layer may use Nostr for opt-in player alerts tied to chain-derived release state. The planned alert set covers:
+
+* new leg start notifications
+* notifications when another player beats a registered player's record
+* notifications when a registered player drops to the bottom of the leaderboard
+
+This notification layer must remain secondary to the authoritative relay model and should reflect only deterministic relay-visible state rather than introducing hidden timing or off-chain economy truth. The roadmap entry lives in [`doc/sprint-map.md`](doc/sprint-map.md:126).
+
+---
+
 ## Outcome
 
 A deterministic, block-based, on-chain reward system where:

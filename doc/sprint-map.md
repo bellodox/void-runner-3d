@@ -122,3 +122,11 @@
 * Test recent history reconstruction from chain only
 * Update README and ops docs for the new block-based on-chain-only prize system
 * Run internal dry-run legs before public rollout  
+
+## Sprint 10 — Nostr notifications
+
+* Add Nostr-based player notifications for new leg start events
+* Add Nostr notifications when another player beats a registered player’s record
+* Add Nostr notifications when a registered player drops to the bottom of the leaderboard
+* Define notification delivery model, relay selection, subscription/auth flow, and player opt-in requirements
+* Document trigger conditions so notifications stay consistent with chain-derived round and leaderboard state
