@@ -51,6 +51,8 @@ const HASH_ALGORITHM = "sha256";
 const PRIZE_PREFIX = `${GAME_PREFIX}prizes/`;
 const RECORD_ENVELOPE_VERSION = 2;
 const RECORD_ENVELOPE_ALGORITHM = "sha256";
+const SETTLEMENT_ENVELOPE_VERSION = 1;
+const SETTLEMENT_ENVELOPE_ALGORITHM = "sha256";
 const FEATURED_LEADERBOARD_DIFFICULTY = "normal";
 const RELEASE_PREFIX = `${GAME_PREFIX}release/v1/`;
 const RELEASE_SCHEMA_VERSION = 1;
@@ -437,22 +439,75 @@ function serializeRoundStandingsValue(standingsPayload) {
 
 function parseRoundSettlementValue(value, expectedRoundId) {
   if (typeof value !== "string" || !value) return null;
-  let parsedValue;
+  let parsedEnvelope;
   try {
-    parsedValue = JSON.parse(value);
+    parsedEnvelope = JSON.parse(value);
   } catch {
     return null;
   }
-  if (!parsedValue || typeof parsedValue !== "object") return null;
-  if (parsedValue.version !== RELEASE_SCHEMA_VERSION || parsedValue.game !== "voidrunner3d") return null;
-  const roundId = sanitizeNonNegativeInteger(parsedValue.roundId);
+  if (!parsedEnvelope || typeof parsedEnvelope !== "object") return null;
+
+  const envelopeVersion = Number(parsedEnvelope.version);
+  if (!Number.isInteger(envelopeVersion) || envelopeVersion !== SETTLEMENT_ENVELOPE_VERSION) return null;
+  if (parsedEnvelope.game !== "voidrunner3d") return null;
+  if (parsedEnvelope.algorithm !== SETTLEMENT_ENVELOPE_ALGORITHM) return null;
+
+  const roundId = sanitizeNonNegativeInteger(parsedEnvelope.roundId);
   if (roundId === null || roundId !== expectedRoundId) return null;
-  if (typeof parsedValue.status !== "string") return null;
-  return parsedValue;
+
+  const salt = typeof parsedEnvelope.salt === "string" ? parsedEnvelope.salt : "";
+  const encodedPayload = typeof parsedEnvelope.payload === "string" ? parsedEnvelope.payload : "";
+  const providedDigest = typeof parsedEnvelope.digest === "string" ? parsedEnvelope.digest : "";
+  if (!salt || !encodedPayload || !providedDigest) return null;
+
+  const expectedDigest = crypto
+    .createHash(SETTLEMENT_ENVELOPE_ALGORITHM)
+    .update(`${roundId}:${salt}:${encodedPayload}`)
+    .digest("hex");
+  if (providedDigest !== expectedDigest) return null;
+
+  let payloadObject;
+  try {
+    payloadObject = JSON.parse(Buffer.from(encodedPayload, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (!payloadObject || typeof payloadObject !== "object") return null;
+
+  if (payloadObject.version !== RELEASE_SCHEMA_VERSION || payloadObject.game !== "voidrunner3d") return null;
+  const payloadRoundId = sanitizeNonNegativeInteger(payloadObject.roundId);
+  if (payloadRoundId === null || payloadRoundId !== roundId) return null;
+  if (typeof payloadObject.status !== "string") return null;
+
+  return payloadObject;
 }
 
 function serializeRoundSettlementValue(settlementPayload) {
-  return JSON.stringify(settlementPayload);
+  const roundId = sanitizeNonNegativeInteger(settlementPayload?.roundId);
+  if (roundId === null) {
+    throw new Error("Settlement payload must include a valid roundId");
+  }
+
+  const encodedPayload = Buffer.from(JSON.stringify(settlementPayload), "utf8").toString("base64");
+  const salt = crypto
+    .createHash(SETTLEMENT_ENVELOPE_ALGORITHM)
+    .update(`voidrunner3d:settlement:${roundId}:${encodedPayload}`)
+    .digest("hex")
+    .slice(0, 16);
+  const digest = crypto
+    .createHash(SETTLEMENT_ENVELOPE_ALGORITHM)
+    .update(`${roundId}:${salt}:${encodedPayload}`)
+    .digest("hex");
+
+  return JSON.stringify({
+    version: SETTLEMENT_ENVELOPE_VERSION,
+    game: "voidrunner3d",
+    algorithm: SETTLEMENT_ENVELOPE_ALGORITHM,
+    roundId,
+    salt,
+    payload: encodedPayload,
+    digest
+  });
 }
 
 function parsePlayerLegStatusValue(value, expectedLegId, expectedHandle) {
@@ -1037,27 +1092,7 @@ async function ensureRoundFinalized(roundId, currentBlockHeight) {
     return null;
   }
 
-  const settlementName = `${RELEASE_PREFIX}settlements/${roundId}`;
-  const existingSettlementState = await readName(settlementName);
-  if (existingSettlementState.exists) {
-    const existingSettlementPayload = parseRoundSettlementValue(existingSettlementState.value, roundId);
-    if (existingSettlementPayload) {
-      return existingSettlementPayload;
-    }
-  }
-
-  const derivedSettlementPayload = await deriveSettlementForRound(roundId, currentBlockHeight);
-  if (!derivedSettlementPayload) {
-    return null;
-  }
-
-  try {
-    await ensureNameRegistered(settlementName, serializeRoundSettlementValue(derivedSettlementPayload));
-  } catch {
-    // Fall through to returning the derived payload to keep read behavior available.
-  }
-
-  return derivedSettlementPayload;
+  return deriveSettlementForRound(roundId, currentBlockHeight);
 }
 
 async function getCurrentRoundAndLegPayload(currentBlockHeight) {

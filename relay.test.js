@@ -10,6 +10,8 @@ const MAX_SCORE_SECONDS = 86400;
 const PRIZE_PREFIX = `${GAME_PREFIX}prizes/`;
 const RECORD_ENVELOPE_VERSION = 2;
 const RECORD_ENVELOPE_ALGORITHM = "sha256";
+const SETTLEMENT_ENVELOPE_VERSION = 1;
+const SETTLEMENT_ENVELOPE_ALGORITHM = "sha256";
 const RELEASE_ROUND_BLOCK_SIZE = 120;
 const RELEASE_LEG_BLOCK_SIZE = 1440;
 const RELEASE_ROUNDS_PER_LEG = 12;
@@ -364,22 +366,73 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
 
 function parseRoundSettlementValue(value, expectedRoundId) {
   if (typeof value !== "string" || !value) return null;
-  let parsedValue;
+  let parsedEnvelope;
   try {
-    parsedValue = JSON.parse(value);
+    parsedEnvelope = JSON.parse(value);
   } catch {
     return null;
   }
-  if (!parsedValue || typeof parsedValue !== "object") return null;
-  if (parsedValue.version !== 1 || parsedValue.game !== "voidrunner3d") return null;
-  const roundId = Number(parsedValue.roundId);
+  if (!parsedEnvelope || typeof parsedEnvelope !== "object") return null;
+
+  const envelopeVersion = Number(parsedEnvelope.version);
+  if (!Number.isInteger(envelopeVersion) || envelopeVersion !== SETTLEMENT_ENVELOPE_VERSION) return null;
+  if (parsedEnvelope.game !== "voidrunner3d") return null;
+  if (parsedEnvelope.algorithm !== SETTLEMENT_ENVELOPE_ALGORITHM) return null;
+
+  const roundId = Number(parsedEnvelope.roundId);
   if (!Number.isInteger(roundId) || roundId < 0 || roundId !== expectedRoundId) return null;
-  if (typeof parsedValue.status !== "string") return null;
-  return parsedValue;
+
+  const salt = typeof parsedEnvelope.salt === "string" ? parsedEnvelope.salt : "";
+  const encodedPayload = typeof parsedEnvelope.payload === "string" ? parsedEnvelope.payload : "";
+  const providedDigest = typeof parsedEnvelope.digest === "string" ? parsedEnvelope.digest : "";
+  if (!salt || !encodedPayload || !providedDigest) return null;
+
+  const expectedDigest = crypto
+    .createHash(SETTLEMENT_ENVELOPE_ALGORITHM)
+    .update(`${roundId}:${salt}:${encodedPayload}`)
+    .digest("hex");
+  if (providedDigest !== expectedDigest) return null;
+
+  let payloadObject;
+  try {
+    payloadObject = JSON.parse(Buffer.from(encodedPayload, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (!payloadObject || typeof payloadObject !== "object") return null;
+  if (payloadObject.version !== 1 || payloadObject.game !== "voidrunner3d") return null;
+  const payloadRoundId = Number(payloadObject.roundId);
+  if (!Number.isInteger(payloadRoundId) || payloadRoundId < 0 || payloadRoundId !== roundId) return null;
+  if (typeof payloadObject.status !== "string") return null;
+
+  return payloadObject;
 }
 
 function serializeRoundSettlementValue(settlementPayload) {
-  return JSON.stringify(settlementPayload);
+  const roundId = Number(settlementPayload?.roundId);
+  if (!Number.isInteger(roundId) || roundId < 0) {
+    throw new Error("Settlement payload must include a valid roundId");
+  }
+  const encodedPayload = Buffer.from(JSON.stringify(settlementPayload), "utf8").toString("base64");
+  const salt = crypto
+    .createHash(SETTLEMENT_ENVELOPE_ALGORITHM)
+    .update(`voidrunner3d:settlement:${roundId}:${encodedPayload}`)
+    .digest("hex")
+    .slice(0, 16);
+  const digest = crypto
+    .createHash(SETTLEMENT_ENVELOPE_ALGORITHM)
+    .update(`${roundId}:${salt}:${encodedPayload}`)
+    .digest("hex");
+
+  return JSON.stringify({
+    version: SETTLEMENT_ENVELOPE_VERSION,
+    game: "voidrunner3d",
+    algorithm: SETTLEMENT_ENVELOPE_ALGORITHM,
+    roundId,
+    salt,
+    payload: encodedPayload,
+    digest
+  });
 }
 
 function applyScoreSubmission(existingRecord, handle, difficulty, score, timestamp) {
@@ -715,6 +768,15 @@ section("release settlement derivation");
   assert("round settlement serialization preserves settled status", parsedSettlement?.status === "settled", JSON.stringify(parsedSettlement));
   assert("round settlement serialization preserves winner count", Array.isArray(parsedSettlement?.winners) && parsedSettlement.winners.length === 4, JSON.stringify(parsedSettlement?.winners));
   assert("round settlement parser rejects mismatched round ids", parseRoundSettlementValue(serializedSettlement, 102) === null);
+  {
+    const tamperedEnvelope = JSON.parse(serializedSettlement);
+    tamperedEnvelope.payload = Buffer.from(JSON.stringify({
+      ...settledPayload,
+      winners: [{ rank: 1, handle: "attacker", score: 999, amount: 100 }]
+    }), "utf8").toString("base64");
+    const tamperedSerializedSettlement = JSON.stringify(tamperedEnvelope);
+    assert("round settlement parser rejects digest-mismatched tampered payload", parseRoundSettlementValue(tamperedSerializedSettlement, 101) === null);
+  }
 }
 {
   const settledPayload = buildSettlementFromStandings({

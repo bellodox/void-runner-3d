@@ -740,30 +740,6 @@ async function runTests() {
     assert("insufficient participants exposes minimum required participants", settlementResponse.body?.settlement?.minimumRequiredParticipants === 10, JSON.stringify(settlementResponse.body?.settlement));
   });
 
-  section("release settlement reuses persisted settlement records when available");
-  await withRelay({
-    "g/voidrunner3d/release/v1/settlements/101": JSON.stringify({
-      version: 1,
-      game: "voidrunner3d",
-      roundId: 101,
-      legId: 8,
-      roundStart: 12120,
-      roundEnd: 12239,
-      status: "settled",
-      reason: null,
-      qualifiedParticipants: 10,
-      minimumRequiredParticipants: 10,
-      generatedAtBlock: 9999,
-      winners: [{ rank: 1, handle: "persisted", score: 999, amount: 100 }],
-      liabilities: []
-    })
-  }, async () => {
-    const settlementResponse = await request("GET", "/release/round-settlement?roundId=101");
-    assert("persisted settlement endpoint returns 200", settlementResponse.status === 200, `got ${settlementResponse.status}`);
-    assert("persisted settlement payload is reused instead of regenerated", settlementResponse.body?.settlement?.generatedAtBlock === 9999, JSON.stringify(settlementResponse.body?.settlement));
-    assert("persisted settlement winner handle is preserved", settlementResponse.body?.settlement?.winners?.[0]?.handle === "persisted", JSON.stringify(settlementResponse.body?.settlement?.winners));
-  });
-
   section("release standings tie-break behavior remains deterministic");
   await withRelay({
     "p/alpha": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "alpha", recordName: "g/voidrunner3d/alpha/record" }),
@@ -783,22 +759,7 @@ async function runTests() {
   section("eligibility clears previous-leg liabilities after leg transition");
   await withRelayAtHeight({
     "p/debtpilot": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "debtpilot", recordName: "g/voidrunner3d/debtpilot/record" }),
-    "g/voidrunner3d/debtpilot/record": createRecordValue("debtpilot", { normal: { score: 25, updatedAt: 1000 } }),
-    "g/voidrunner3d/release/v1/settlements/11": JSON.stringify({
-      version: 1,
-      game: "voidrunner3d",
-      roundId: 11,
-      legId: 0,
-      roundStart: 1320,
-      roundEnd: 1439,
-      status: "settled",
-      reason: null,
-      qualifiedParticipants: 10,
-      minimumRequiredParticipants: 10,
-      generatedAtBlock: 1440,
-      winners: [],
-      liabilities: [{ rank: 5, handle: "debtpilot", score: 20, amount: 36, amountPaid: 0, status: "due" }]
-    })
+    "g/voidrunner3d/debtpilot/record": createRecordValue("debtpilot", { normal: { score: 25, updatedAt: 1000 } })
   }, 1440, async () => {
     const eligibilityResponse = await request("GET", "/release/player-eligibility?handle=debtpilot");
     const obligationsResponse = await request("GET", "/release/player-obligations?handle=debtpilot");
