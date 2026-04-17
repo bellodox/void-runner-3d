@@ -923,9 +923,33 @@
         return `${blockStart}-${blockEnd}`;
       }
 
+      const AVERAGE_SECONDS_PER_BLOCK = 30;
+
+      function formatDurationFromSeconds(totalSeconds) {
+        if (!Number.isFinite(totalSeconds)) return "--";
+
+        const clampedSeconds = Math.max(0, Math.floor(totalSeconds));
+        const hours = Math.floor(clampedSeconds / 3600);
+        const minutes = Math.floor((clampedSeconds % 3600) / 60);
+        const seconds = clampedSeconds % 60;
+
+        if (hours > 0) {
+          return `${hours}h ${minutes}m ${seconds}s`;
+        }
+        if (minutes > 0) {
+          return `${minutes}m ${seconds}s`;
+        }
+        return `${seconds}s`;
+      }
+
       function formatBlocksRemaining(blocksRemaining) {
         if (!Number.isFinite(blocksRemaining)) return "--";
-        return `${Math.max(0, Math.floor(blocksRemaining))} blocks remaining`;
+
+        const sanitizedRemainingBlocks = Math.max(0, Math.floor(blocksRemaining));
+        const estimatedSecondsRemaining = sanitizedRemainingBlocks * AVERAGE_SECONDS_PER_BLOCK;
+        const formattedEstimatedDuration = formatDurationFromSeconds(estimatedSecondsRemaining);
+
+        return `${sanitizedRemainingBlocks} blocks remaining (~${formattedEstimatedDuration})`;
       }
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
