@@ -1021,14 +1021,20 @@ async function derivePlayerLegStatus(handle, currentBlockHeight) {
     const settlementPayload = await deriveSettlementForRound(roundId, currentBlockHeight);
     if (!settlementPayload || settlementPayload.status !== "settled") continue;
 
-    const liabilityEntry = settlementPayload.liabilities.find((entry) => entry.handle === handle);
-    if (!liabilityEntry) continue;
+    const liabilityEntries = settlementPayload.liabilities.filter((entry) => entry.handle === handle);
+    if (!liabilityEntries.length) continue;
+
+    const totalAmountDue = liabilityEntries.reduce((totalAmount, liabilityEntry) => totalAmount + liabilityEntry.amount, 0);
+    const liabilityDifficulties = Array.from(new Set(liabilityEntries
+      .map((liabilityEntry) => sanitizeDifficulty(liabilityEntry.difficulty))
+      .filter(Boolean)));
 
     outstanding.push({
       roundId,
-      amountDue: liabilityEntry.amount,
+      amountDue: totalAmountDue,
       amountPaid: 0,
-      status: "due"
+      status: "due",
+      difficulties: liabilityDifficulties
     });
   }
 
@@ -1074,8 +1080,26 @@ async function buildRoundStandingsPayload(roundId, currentBlockHeight, featuredL
 }
 
 function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
-  const topEntries = standingsPayload.entries;
-  if (topEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+  const entriesByDifficulty = {
+    [FEATURED_LEADERBOARD_DIFFICULTY]: Array.isArray(standingsPayload.entries) ? standingsPayload.entries : []
+  };
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    if (difficulty === FEATURED_LEADERBOARD_DIFFICULTY) continue;
+    entriesByDifficulty[difficulty] = Array.isArray(standingsPayload?.tieredDifficultyEntries?.[difficulty])
+      ? standingsPayload.tieredDifficultyEntries[difficulty]
+      : [];
+  }
+
+  const qualifiedParticipantsByDifficulty = {};
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    qualifiedParticipantsByDifficulty[difficulty] = entriesByDifficulty[difficulty].length;
+  }
+
+  const hasAnyEligibleDifficulty = RELEASE_SETTLEMENT_DIFFICULTIES.some(
+    (difficulty) => qualifiedParticipantsByDifficulty[difficulty] >= RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS
+  );
+
+  if (!hasAnyEligibleDifficulty) {
     return {
       version: RELEASE_SCHEMA_VERSION,
       game: "voidrunner3d",
@@ -1085,7 +1109,8 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
       roundEnd: standingsPayload.roundEnd,
       status: "closed-no-settlement",
       reason: "insufficient-qualified-participants",
-      qualifiedParticipants: topEntries.length,
+      qualifiedParticipants: qualifiedParticipantsByDifficulty[FEATURED_LEADERBOARD_DIFFICULTY],
+      qualifiedParticipantsByDifficulty,
       minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
       generatedAtBlock: currentBlockHeight,
       winners: [],
@@ -1096,9 +1121,7 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
   const winners = [];
   for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
     const payoutSchedule = RELEASE_TIERED_PAYOUTS[difficulty] || RELEASE_PAYOUTS;
-    const difficultyEntries = difficulty === FEATURED_LEADERBOARD_DIFFICULTY
-      ? topEntries
-      : standingsPayload?.tieredDifficultyEntries?.[difficulty] || [];
+    const difficultyEntries = entriesByDifficulty[difficulty] || [];
 
     if (difficultyEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
       continue;
@@ -1113,14 +1136,27 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
     }));
     winners.push(...difficultyWinners);
   }
-  const liabilities = topEntries.slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length).map((entry, index) => ({
-    rank: entry.rank,
-    handle: entry.handle,
-    score: entry.score,
-    amount: RELEASE_LIABILITIES[index],
-    amountPaid: 0,
-    status: "due"
-  }));
+
+  const liabilities = [];
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    const difficultyEntries = entriesByDifficulty[difficulty] || [];
+    if (difficultyEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+      continue;
+    }
+
+    const difficultyLiabilities = difficultyEntries
+      .slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length)
+      .map((entry, index) => ({
+        rank: entry.rank,
+        handle: entry.handle,
+        score: entry.score,
+        difficulty,
+        amount: RELEASE_LIABILITIES[index],
+        amountPaid: 0,
+        status: "due"
+      }));
+    liabilities.push(...difficultyLiabilities);
+  }
 
   return {
     version: RELEASE_SCHEMA_VERSION,
@@ -1131,7 +1167,8 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
     roundEnd: standingsPayload.roundEnd,
     status: "settled",
     reason: null,
-    qualifiedParticipants: topEntries.length,
+    qualifiedParticipants: qualifiedParticipantsByDifficulty[FEATURED_LEADERBOARD_DIFFICULTY],
+    qualifiedParticipantsByDifficulty,
     minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
     generatedAtBlock: currentBlockHeight,
     winners,

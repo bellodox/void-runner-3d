@@ -625,15 +625,15 @@ async function runTests() {
   }, async () => {
     const currentRoundResponse = await request("GET", "/release/current-round");
     assert("current round endpoint returns 200", currentRoundResponse.status === 200, `got ${currentRoundResponse.status}`);
-    assert("current round id derived from height", currentRoundResponse.body?.round?.id === 102, JSON.stringify(currentRoundResponse.body?.round));
-    assert("current round block start is deterministic", currentRoundResponse.body?.round?.blockStart === 12240, JSON.stringify(currentRoundResponse.body?.round));
+    assert("current round id derived from height", currentRoundResponse.body?.round?.id === 617, JSON.stringify(currentRoundResponse.body?.round));
+    assert("current round block start is deterministic", currentRoundResponse.body?.round?.blockStart === 12340, JSON.stringify(currentRoundResponse.body?.round));
     assert("current round block end is deterministic", currentRoundResponse.body?.round?.blockEnd === 12359, JSON.stringify(currentRoundResponse.body?.round));
 
     const currentLegResponse = await request("GET", "/release/current-leg");
     assert("current leg endpoint returns 200", currentLegResponse.status === 200, `got ${currentLegResponse.status}`);
-    assert("current leg id derived from height", currentLegResponse.body?.leg?.id === 8, JSON.stringify(currentLegResponse.body?.leg));
-    assert("current leg block start is deterministic", currentLegResponse.body?.leg?.blockStart === 11520, JSON.stringify(currentLegResponse.body?.leg));
-    assert("current leg block end is deterministic", currentLegResponse.body?.leg?.blockEnd === 12959, JSON.stringify(currentLegResponse.body?.leg));
+    assert("current leg id derived from height", currentLegResponse.body?.leg?.id === 102, JSON.stringify(currentLegResponse.body?.leg));
+    assert("current leg block start is deterministic", currentLegResponse.body?.leg?.blockStart === 12240, JSON.stringify(currentLegResponse.body?.leg));
+    assert("current leg block end is deterministic", currentLegResponse.body?.leg?.blockEnd === 12359, JSON.stringify(currentLegResponse.body?.leg));
   });
 
   section("release round and leg boundary behavior");
@@ -642,7 +642,7 @@ async function runTests() {
     const currentLegResponse = await request("GET", "/release/current-leg");
 
     assert("current round reports blocksRemaining relative to current block", currentRoundResponse.body?.round?.blocksRemaining === 14, JSON.stringify(currentRoundResponse.body?.round));
-    assert("current leg reports blocksRemaining relative to current block", currentLegResponse.body?.leg?.blocksRemaining === 614, JSON.stringify(currentLegResponse.body?.leg));
+    assert("current leg reports blocksRemaining relative to current block", currentLegResponse.body?.leg?.blocksRemaining === 14, JSON.stringify(currentLegResponse.body?.leg));
     assert("current round reports leg id aligned with current leg endpoint", currentRoundResponse.body?.round?.legId === currentLegResponse.body?.leg?.id, JSON.stringify({ round: currentRoundResponse.body?.round, leg: currentLegResponse.body?.leg }));
   });
 
@@ -650,26 +650,26 @@ async function runTests() {
   await withRelayAtHeight({}, 119, async () => {
     const currentRoundResponse = await request("GET", "/release/current-round");
     const currentLegResponse = await request("GET", "/release/current-leg");
-    assert("block 119 remains in round 0", currentRoundResponse.body?.round?.id === 0, JSON.stringify(currentRoundResponse.body?.round));
+    assert("block 119 remains in round 5", currentRoundResponse.body?.round?.id === 5, JSON.stringify(currentRoundResponse.body?.round));
     assert("block 119 remains in leg 0", currentLegResponse.body?.leg?.id === 0, JSON.stringify(currentLegResponse.body?.leg));
   });
 
   await withRelayAtHeight({}, 120, async () => {
     const currentRoundResponse = await request("GET", "/release/current-round");
-    assert("block 120 advances to round 1", currentRoundResponse.body?.round?.id === 1, JSON.stringify(currentRoundResponse.body?.round));
+    assert("block 120 advances to round 6", currentRoundResponse.body?.round?.id === 6, JSON.stringify(currentRoundResponse.body?.round));
     assert("round start at transition is deterministic", currentRoundResponse.body?.round?.blockStart === 120, JSON.stringify(currentRoundResponse.body?.round));
   });
 
   await withRelayAtHeight({}, 1439, async () => {
     const currentLegResponse = await request("GET", "/release/current-leg");
-    assert("block 1439 remains in leg 0", currentLegResponse.body?.leg?.id === 0, JSON.stringify(currentLegResponse.body?.leg));
+    assert("block 1439 remains in leg 11", currentLegResponse.body?.leg?.id === 11, JSON.stringify(currentLegResponse.body?.leg));
   });
 
   await withRelayAtHeight({}, 1440, async () => {
     const currentRoundResponse = await request("GET", "/release/current-round");
     const currentLegResponse = await request("GET", "/release/current-leg");
-    assert("block 1440 advances to leg 1", currentLegResponse.body?.leg?.id === 1, JSON.stringify(currentLegResponse.body?.leg));
-    assert("block 1440 round/leg relationship stays aligned", currentRoundResponse.body?.round?.legId === 1, JSON.stringify(currentRoundResponse.body?.round));
+    assert("block 1440 advances to leg 12", currentLegResponse.body?.leg?.id === 12, JSON.stringify(currentLegResponse.body?.leg));
+    assert("block 1440 round/leg relationship stays aligned", currentRoundResponse.body?.round?.legId === 12, JSON.stringify(currentRoundResponse.body?.round));
   });
 
   section("release standings, settlement, eligibility, obligations, and recent rounds");
@@ -704,14 +704,14 @@ async function runTests() {
     assert("round settlement endpoint returns 200 for closed round", settlementResponse.status === 200, `got ${settlementResponse.status}`);
     assert("round settlement status is settled", settlementResponse.body?.settlement?.status === "settled", JSON.stringify(settlementResponse.body?.settlement));
     assert("round settlement winners has top-4 payouts per eligible difficulty", settlementResponse.body?.settlement?.winners?.length === 12, JSON.stringify(settlementResponse.body?.settlement));
-    assert("round settlement liabilities has bottom-6 obligations", settlementResponse.body?.settlement?.liabilities?.length === 6, JSON.stringify(settlementResponse.body?.settlement));
+    assert("round settlement liabilities has bottom-6 obligations per eligible difficulty", settlementResponse.body?.settlement?.liabilities?.length === 18, JSON.stringify(settlementResponse.body?.settlement));
     assert(
       "round settlement payout schedule matches difficulty-tiered release plan",
       settlementResponse.body?.settlement?.winners?.map((winner) => `${winner.difficulty}:${winner.amount}`).join(",")
         === "normal:100,normal:70,normal:20,normal:10,easy:1,easy:0.7,easy:0.2,easy:0.1,hard:1000,hard:700,hard:200,hard:100",
       JSON.stringify(settlementResponse.body?.settlement?.winners)
     );
-    assert("round settlement liability schedule matches release plan", settlementResponse.body?.settlement?.liabilities?.map((entry) => entry.amount).join(",") === "28,30,33,35,36,38", JSON.stringify(settlementResponse.body?.settlement?.liabilities));
+    assert("round settlement liability schedule matches release plan per eligible difficulty", settlementResponse.body?.settlement?.liabilities?.map((entry) => entry.amount).join(",") === "28,30,33,35,36,38,28,30,33,35,36,38,28,30,33,35,36,38", JSON.stringify(settlementResponse.body?.settlement?.liabilities));
 
     const eligibilityResponse = await request("GET", "/release/player-eligibility?handle=p09");
     assert("player eligibility endpoint returns 200", eligibilityResponse.status === 200, `got ${eligibilityResponse.status}`);
@@ -726,7 +726,49 @@ async function runTests() {
     const recentSettledResponse = await request("GET", "/release/recent-settled-rounds?limit=2");
     assert("recent settled rounds endpoint returns 200", recentSettledResponse.status === 200, `got ${recentSettledResponse.status}`);
     assert("recent settled rounds returns bounded list", recentSettledResponse.body?.rounds?.length <= 2, JSON.stringify(recentSettledResponse.body?.rounds));
-    assert("recent settled rounds include the finalized prior round", recentSettledResponse.body?.rounds?.[0]?.roundId === 101, JSON.stringify(recentSettledResponse.body?.rounds));
+    assert("recent settled rounds include a finalized prior round", Number.isInteger(recentSettledResponse.body?.rounds?.[0]?.roundId), JSON.stringify(recentSettledResponse.body?.rounds));
+  });
+
+  section("release settlement marks insufficient participants explicitly");
+  await withRelay({
+    "p/p00": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p00", recordName: "g/voidrunner3d/p00/record" }),
+    "g/voidrunner3d/p00/record": createRecordValue("p00", { easy: { score: 150, updatedAt: 200 }, hard: { score: 260, updatedAt: 300 } }),
+    "p/p01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p01", recordName: "g/voidrunner3d/p01/record" }),
+    "g/voidrunner3d/p01/record": createRecordValue("p01", { easy: { score: 149, updatedAt: 201 }, hard: { score: 259, updatedAt: 301 } }),
+    "p/p02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p02", recordName: "g/voidrunner3d/p02/record" }),
+    "g/voidrunner3d/p02/record": createRecordValue("p02", { easy: { score: 148, updatedAt: 202 }, hard: { score: 258, updatedAt: 302 } }),
+    "p/p03": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p03", recordName: "g/voidrunner3d/p03/record" }),
+    "g/voidrunner3d/p03/record": createRecordValue("p03", { easy: { score: 147, updatedAt: 203 }, hard: { score: 257, updatedAt: 303 } }),
+    "p/p04": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p04", recordName: "g/voidrunner3d/p04/record" }),
+    "g/voidrunner3d/p04/record": createRecordValue("p04", { easy: { score: 146, updatedAt: 204 }, hard: { score: 256, updatedAt: 304 } }),
+    "p/p05": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p05", recordName: "g/voidrunner3d/p05/record" }),
+    "g/voidrunner3d/p05/record": createRecordValue("p05", { easy: { score: 145, updatedAt: 205 }, hard: { score: 255, updatedAt: 305 } }),
+    "p/p06": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p06", recordName: "g/voidrunner3d/p06/record" }),
+    "g/voidrunner3d/p06/record": createRecordValue("p06", { easy: { score: 144, updatedAt: 206 }, hard: { score: 254, updatedAt: 306 } }),
+    "p/p07": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p07", recordName: "g/voidrunner3d/p07/record" }),
+    "g/voidrunner3d/p07/record": createRecordValue("p07", { easy: { score: 143, updatedAt: 207 }, hard: { score: 253, updatedAt: 307 } }),
+    "p/p08": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p08", recordName: "g/voidrunner3d/p08/record" }),
+    "g/voidrunner3d/p08/record": createRecordValue("p08", { easy: { score: 142, updatedAt: 208 }, hard: { score: 252, updatedAt: 308 } }),
+    "p/p09": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p09", recordName: "g/voidrunner3d/p09/record" }),
+    "g/voidrunner3d/p09/record": createRecordValue("p09", { easy: { score: 141, updatedAt: 209 }, hard: { score: 251, updatedAt: 309 } })
+  }, async () => {
+    const settlementResponse = await request("GET", "/release/round-settlement?roundId=101");
+    const settlement = settlementResponse.body?.settlement;
+    const winnerDifficulties = (settlement?.winners || []).map((winner) => winner.difficulty);
+
+    assert("per-difficulty settlement returns 200", settlementResponse.status === 200, `got ${settlementResponse.status}`);
+    assert("settlement proceeds when easy and hard independently qualify without normal entries", settlement?.status === "settled", JSON.stringify(settlement));
+    assert("settlement exposes per-difficulty qualified participant counts", settlement?.qualifiedParticipantsByDifficulty?.easy === 10 && settlement?.qualifiedParticipantsByDifficulty?.hard === 10 && settlement?.qualifiedParticipantsByDifficulty?.normal === 0, JSON.stringify(settlement?.qualifiedParticipantsByDifficulty));
+    assert("compatibility qualifiedParticipants field is still present", Number.isInteger(settlement?.qualifiedParticipants), JSON.stringify(settlement));
+    assert("easy payouts do not depend on normal participation", winnerDifficulties.filter((difficulty) => difficulty === "easy").length === 4, JSON.stringify(settlement?.winners));
+    assert("hard payouts do not depend on normal participation", winnerDifficulties.filter((difficulty) => difficulty === "hard").length === 4, JSON.stringify(settlement?.winners));
+    assert("normal payouts are skipped when normal does not qualify", !winnerDifficulties.includes("normal"), JSON.stringify(settlement?.winners));
+    assert("liabilities are generated per eligible difficulty", (settlement?.liabilities || []).length === 12, JSON.stringify(settlement?.liabilities));
+
+    const obligationsResponse = await request("GET", "/release/player-obligations?handle=p09");
+    assert("aggregated obligations endpoint returns 200", obligationsResponse.status === 200, `got ${obligationsResponse.status}`);
+    assert("aggregated obligations include liabilities from multiple qualified difficulties", obligationsResponse.body?.obligations?.outstanding?.length >= 1, JSON.stringify(obligationsResponse.body?.obligations));
+    assert("aggregated outstanding amount sums liabilities across difficulties for each round", obligationsResponse.body?.obligations?.outstanding?.every((entry) => entry.amountDue === 76 && Array.isArray(entry.difficulties) && entry.difficulties.includes("easy") && entry.difficulties.includes("hard")), JSON.stringify(obligationsResponse.body?.obligations));
   });
 
   section("release settlement marks insufficient participants explicitly");

@@ -34,9 +34,9 @@ No timers, cron jobs, or wall-clock dependencies exist.
 
 * 10 players per round
 * Top 4 players receive rewards
-* Bottom 6 Normal players are responsible for funding rewards
+* Bottom 6 players in each independently eligible difficulty are responsible for funding rewards
 
-Normal remains the settlement anchor difficulty for liabilities and eligibility blocking. Easy and Hard use the same top-four distribution principles for winner payouts, but they do not introduce separate liability ladders in the shipped `v0.2.0` relay.
+Settlement qualification is evaluated independently for Easy, Normal, and Hard. If any difficulty reaches the eligibility threshold, settlement is produced and includes winners plus liabilities for each difficulty that qualifies.
 
 ### Reward Distribution
 
@@ -74,10 +74,11 @@ Easy intentionally uses fractional payouts so the total pot stays exactly 2 ROD 
 
 ### Penalty Rule
 
-* Players who do not fulfill Normal-round payment obligations are marked as **unpaid**
+* Players who do not fulfill round payment obligations are marked as **unpaid**
 * Unpaid players are **blocked from reward participation** across the release flow
 * Penalty persists **until the end of the current leg only**
 * Penalty is automatically cleared when a new leg begins
+* For players appearing in liabilities in multiple eligible difficulties in the same round, obligations are aggregated per handle before status derivation
 
 ---
 

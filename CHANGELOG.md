@@ -10,13 +10,14 @@
 
 ### Release economy
 - Clarified that Easy `2 ROD` and Hard `2000 ROD` are whole-tier pots, not first-place payouts, with the authoritative schedules now reflected from [`leaderboard-relay.js`](leaderboard-relay.js): Easy `1, 0.7, 0.2, 0.1`, Normal `100, 70, 20, 10`, and Hard `1000, 700, 200, 100`.
-- Documented that Normal remains the anchor difficulty for liabilities and eligibility blocking, while Easy and Hard winners are paid alongside Normal when settlement conditions are met.
+- Documented that settlement qualification now evaluates Easy, Normal, and Hard independently, winners/liabilities are derived per eligible difficulty, and player obligations aggregate per handle across eligible difficulties in [`buildSettlementFromStandings()`](leaderboard-relay.js:1082) and [`derivePlayerLegStatus()`](leaderboard-relay.js:1013).
+- Documented settlement payload compatibility fields so `qualifiedParticipantsByDifficulty` is present while `qualifiedParticipants` remains available.
 
 ### Frontend and UX
 - Documented the shipped browser UI behavior in [`index.html`](index.html), including tiered reward summaries on the menu and game-over overlays and a difficulty-aware game-over featured chart that follows the active run difficulty.
 
 ### Validation
-- Recorded the latest validated results aligned with the current release runtime: [`relay.test.js`](relay.test.js) 58 passed, 0 failed; [`relay-http.test.js`](relay-http.test.js) 155 passed, 0 failed; [`admin-relay.test.js`](admin-relay.test.js) 9 passed, 0 failed; [`game.test.js`](game.test.js) 71 passed, 0 failed.
+- Recorded the latest validated results aligned with the current release runtime: [`relay.test.js`](relay.test.js) 58 passed, 0 failed; [`relay-http.test.js`](relay-http.test.js) 166 passed, 0 failed; [`admin-relay.test.js`](admin-relay.test.js) 9 passed, 0 failed; [`game.test.js`](game.test.js) 71 passed, 0 failed.
 
 ## [0.2.0] - 2026-04-17
 

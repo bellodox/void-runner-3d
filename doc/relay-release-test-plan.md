@@ -35,12 +35,15 @@ Primary automated suites:
 ### 2) Settlement generation and schedule integrity
 - Coverage source: settlement sections in [`relay.test.js`](relay.test.js:682) and [`relay-http.test.js`](relay-http.test.js:612)
 - **Pass criteria**
-  - `< 10` participants => `closed-no-settlement`
-  - `>= 10` participants => `settled`
-  - Normal winners include amounts `100,70,20,10`
-  - Easy winners include amounts `1,0.7,0.2,0.1`
-  - Hard winners include amounts `1000,700,200,100`
-  - Liabilities count = 6 with amounts `28,30,33,35,36,38` anchored to Normal standings
+  - `qualifiedParticipantsByDifficulty` is exposed and matches per-difficulty participant counts
+  - If all difficulties are `< 10` participants => `closed-no-settlement`
+  - If any difficulty is `>= 10` participants => `settled`
+  - Winners are emitted only for difficulties that independently qualify
+  - Normal winners include amounts `100,70,20,10` when Normal qualifies
+  - Easy winners include amounts `1,0.7,0.2,0.1` when Easy qualifies
+  - Hard winners include amounts `1000,700,200,100` when Hard qualifies
+  - Liabilities are emitted per eligible difficulty with amounts `28,30,33,35,36,38`
+  - `qualifiedParticipants` remains present for compatibility
   - **Fail criteria**
   - Any payout/liability schedule drift or invalid status transition
 
@@ -107,7 +110,7 @@ Primary automated suites:
 - `npm run coverage:relay` succeeded
 - Updated totals include:
   - [`relay.test.js`](relay.test.js): 58 passed
-  - [`relay-http.test.js`](relay-http.test.js): 155 passed
+  - [`relay-http.test.js`](relay-http.test.js): 166 passed
   - [`admin-relay.test.js`](admin-relay.test.js): 9 passed
   - [`game.test.js`](game.test.js): 71 passed
-  - combined release validation: 293 passed
+  - combined release validation: 304 passed

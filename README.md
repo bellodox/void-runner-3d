@@ -22,13 +22,19 @@ Round and leg IDs, block ranges, and remaining blocks are derived by the relay a
 ### Settlement model
 The public relay derives release settlements from current block height and player-owned records via [`ensureRoundFinalized()`](leaderboard-relay.js:1089).
 
-If a closed round has at least 10 qualified Normal participants, the relay derives:
-- top 4 Normal winner payouts: 100, 70, 20, 10 ROD via [`RELEASE_PAYOUTS`](leaderboard-relay.js:62)
-- top 4 Easy winner payouts from a 2 ROD total pot: 1, 0.7, 0.2, 0.1 via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
-- top 4 Hard winner payouts from a 2000 ROD total pot: 1000, 700, 200, 100 via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
-- bottom 6 liabilities anchored to the Normal standings slice: 28, 30, 33, 35, 36, 38 ROD via [`RELEASE_LIABILITIES`](leaderboard-relay.js:69)
+Settlement eligibility is now evaluated per difficulty in [`buildSettlementFromStandings()`](leaderboard-relay.js:1082):
+- the relay counts qualified participants independently for Easy, Normal, and Hard
+- settlement proceeds when at least one difficulty has `>= 10` qualified participants
+- winners are paid only for difficulties that independently qualify
+- liabilities are derived per eligible difficulty using the same bottom-six schedule
 
-Easy and Hard payout tiers follow the same proportional split as Normal, while liabilities and eligibility blocking remain Normal-anchored in [`buildSettlementFromStandings()`](leaderboard-relay.js:1076). The relay reuses a shared leaderboard-candidate scan across supported payout difficulties in [`deriveSettlementForRound()`](leaderboard-relay.js:985).
+The payout ladders remain:
+- Normal: `100, 70, 20, 10` via [`RELEASE_PAYOUTS`](leaderboard-relay.js:62)
+- Easy: `1, 0.7, 0.2, 0.1` from a 2 ROD total pot via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
+- Hard: `1000, 700, 200, 100` from a 2000 ROD total pot via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
+- liabilities per eligible difficulty: `28, 30, 33, 35, 36, 38` via [`RELEASE_LIABILITIES`](leaderboard-relay.js:69)
+
+Settlement payloads now include per-difficulty counts in `qualifiedParticipantsByDifficulty` while preserving `qualifiedParticipants` for compatibility. Player obligations are aggregated per handle across eligible difficulties within the round by [`derivePlayerLegStatus()`](leaderboard-relay.js:1013). The relay continues to reuse a shared leaderboard-candidate scan across supported payout difficulties in [`deriveSettlementForRound()`](leaderboard-relay.js:985).
 
 If a round closes without enough qualified players, the settlement is returned as `closed-no-settlement` by [`buildSettlementFromStandings()`](leaderboard-relay.js:1076).
 
@@ -180,10 +186,10 @@ It runs:
 
 Latest validated results for the shipped release state:
 - [`relay.test.js`](relay.test.js): 58 passed, 0 failed
-- [`relay-http.test.js`](relay-http.test.js): 155 passed, 0 failed
+- [`relay-http.test.js`](relay-http.test.js): 166 passed, 0 failed
 - [`admin-relay.test.js`](admin-relay.test.js): 9 passed, 0 failed
 - [`game.test.js`](game.test.js): 71 passed, 0 failed
-- combined release validation: 293 passed, 0 failed
+- combined release validation: 304 passed, 0 failed
 
 ## Planned follow-up
 - Nostr-based notifications are planned for future release work, covering new-leg start alerts, beaten-record alerts, and bottom-of-leaderboard alerts for registered players, with the roadmap tracked in [`doc/sprint-map.md`](doc/sprint-map.md:126).
