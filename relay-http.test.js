@@ -708,7 +708,7 @@ async function runTests() {
     assert(
       "round settlement payout schedule matches difficulty-tiered release plan",
       settlementResponse.body?.settlement?.winners?.map((winner) => `${winner.difficulty}:${winner.amount}`).join(",")
-        === "normal:100,normal:70,normal:20,normal:10,easy:20,easy:14,easy:4,easy:2,hard:2000,hard:1400,hard:400,hard:200",
+        === "normal:100,normal:70,normal:20,normal:10,easy:1,easy:0.7,easy:0.2,easy:0.1,hard:1000,hard:700,hard:200,hard:100",
       JSON.stringify(settlementResponse.body?.settlement?.winners)
     );
     assert("round settlement liability schedule matches release plan", settlementResponse.body?.settlement?.liabilities?.map((entry) => entry.amount).join(",") === "28,30,33,35,36,38", JSON.stringify(settlementResponse.body?.settlement?.liabilities));

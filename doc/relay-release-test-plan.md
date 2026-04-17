@@ -37,9 +37,11 @@ Primary automated suites:
 - **Pass criteria**
   - `< 10` participants => `closed-no-settlement`
   - `>= 10` participants => `settled`
-  - Winners count = 4 with amounts `100,70,20,10`
-  - Liabilities count = 6 with amounts `28,30,33,35,36,38`
-- **Fail criteria**
+  - Normal winners include amounts `100,70,20,10`
+  - Easy winners include amounts `1,0.7,0.2,0.1`
+  - Hard winners include amounts `1000,700,200,100`
+  - Liabilities count = 6 with amounts `28,30,33,35,36,38` anchored to Normal standings
+  - **Fail criteria**
   - Any payout/liability schedule drift or invalid status transition
 
 ### 3) Eligibility and obligations lifecycle
@@ -73,9 +75,10 @@ Primary automated suites:
 - Coverage source: release widget and player-flow checks in [`game.test.js`](game.test.js:173)
 - **Pass criteria**
   - Menu/game-over release widgets render expected text blocks
+  - Menu/game-over tiered reward summaries render for Easy, Normal, and Hard settlement data
   - Expandable game-over details and improved release board layout preserve readable release context
   - Player handle badge remains visible in the active UI
-  - Featured rank context appears from relay-backed data
+  - Featured rank context appears from relay-backed data, and the game-over featured chart follows the active run difficulty
   - Relay/API failure noise does not trigger false JS-error test failures
 - **Fail criteria**
   - Missing release widgets, broken details sections, missing handle visibility, or uncaught runtime JS failures
@@ -103,8 +106,8 @@ Primary automated suites:
 - `npm run validate:release` succeeded for the shipped `v0.2.0` release candidate
 - `npm run coverage:relay` succeeded
 - Updated totals include:
-  - [`relay.test.js`](relay.test.js): 55 passed
+  - [`relay.test.js`](relay.test.js): 58 passed
   - [`relay-http.test.js`](relay-http.test.js): 155 passed
   - [`admin-relay.test.js`](admin-relay.test.js): 9 passed
-  - [`game.test.js`](game.test.js): 68 passed
-  - combined release validation: 287 passed
+  - [`game.test.js`](game.test.js): 71 passed
+  - combined release validation: 293 passed

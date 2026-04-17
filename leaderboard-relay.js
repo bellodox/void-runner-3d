@@ -62,8 +62,8 @@ const RELEASE_ROUNDS_PER_LEG = 12;
 const RELEASE_PAYOUTS = Object.freeze([100, 70, 20, 10]);
 const RELEASE_TIERED_PAYOUTS = Object.freeze({
   normal: RELEASE_PAYOUTS,
-  easy: Object.freeze([20, 14, 4, 2]),
-  hard: Object.freeze([2000, 1400, 400, 200])
+  easy: Object.freeze([1, 0.7, 0.2, 0.1]),
+  hard: Object.freeze([1000, 700, 200, 100])
 });
 const RELEASE_SETTLEMENT_DIFFICULTIES = Object.freeze(Object.keys(RELEASE_TIERED_PAYOUTS));
 const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);

@@ -18,8 +18,8 @@ const RELEASE_ROUNDS_PER_LEG = 12;
 const RELEASE_PAYOUTS = Object.freeze([100, 70, 20, 10]);
 const RELEASE_TIERED_PAYOUTS = Object.freeze({
   normal: RELEASE_PAYOUTS,
-  easy: Object.freeze([20, 14, 4, 2]),
-  hard: Object.freeze([2000, 1400, 400, 200])
+  easy: Object.freeze([1, 0.7, 0.2, 0.1]),
+  hard: Object.freeze([1000, 700, 200, 100])
 });
 const RELEASE_SETTLEMENT_DIFFICULTIES = Object.freeze(Object.keys(RELEASE_TIERED_PAYOUTS));
 const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);
@@ -842,7 +842,7 @@ section("release settlement derivation");
   assert(
     "winner payouts match tiered release amounts by difficulty",
     settledPayload.winners.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",")
-      === "normal:100,normal:70,normal:20,normal:10,easy:20,easy:14,easy:4,easy:2,hard:2000,hard:1400,hard:400,hard:200",
+      === "normal:100,normal:70,normal:20,normal:10,easy:1,easy:0.7,easy:0.2,easy:0.1,hard:1000,hard:700,hard:200,hard:100",
     JSON.stringify(settledPayload.winners)
   );
   assert("liability amounts match release schedule", settledPayload.liabilities.map((entry) => entry.amount).join(",") === RELEASE_LIABILITIES.join(","), JSON.stringify(settledPayload.liabilities));
@@ -912,7 +912,7 @@ section("property-based invariants for settlement schedules");
     const liabilitiesCountValid = settlementPayload.liabilities.length === (shouldSettle ? RELEASE_LIABILITIES.length : 0);
     const winnersAmountsValid = settlementPayload.winners.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",") === (
       shouldSettle
-        ? "normal:100,normal:70,normal:20,normal:10,easy:20,easy:14,easy:4,easy:2,hard:2000,hard:1400,hard:400,hard:200"
+        ? "normal:100,normal:70,normal:20,normal:10,easy:1,easy:0.7,easy:0.2,easy:0.1,hard:1000,hard:700,hard:200,hard:100"
         : ""
     );
     const liabilitiesAmountsValid = settlementPayload.liabilities.map((entry) => entry.amount).join(",") === (shouldSettle ? RELEASE_LIABILITIES.join(",") : "");

@@ -34,14 +34,34 @@ No timers, cron jobs, or wall-clock dependencies exist.
 
 * 10 players per round
 * Top 4 players receive rewards
-* Bottom 6 players are responsible for funding rewards
+* Bottom 6 Normal players are responsible for funding rewards
+
+Normal remains the settlement anchor difficulty for liabilities and eligibility blocking. Easy and Hard use the same top-four distribution principles for winner payouts, but they do not introduce separate liability ladders in the shipped `v0.2.0` relay.
 
 ### Reward Distribution
+
+#### Normal total pot: **200 ROD**
 
 * 1st place: **100 ROD**
 * 2nd place: **70 ROD**
 * 3rd place: **20 ROD**
 * 4th place: **10 ROD**
+
+#### Easy total pot: **2 ROD**
+
+* 1st place: **1 ROD**
+* 2nd place: **0.7 ROD**
+* 3rd place: **0.2 ROD**
+* 4th place: **0.1 ROD**
+
+#### Hard total pot: **2000 ROD**
+
+* 1st place: **1000 ROD**
+* 2nd place: **700 ROD**
+* 3rd place: **200 ROD**
+* 4th place: **100 ROD**
+
+Easy intentionally uses fractional payouts so the total pot stays exactly 2 ROD while preserving the same proportional split used by Normal.
 
 ### Contribution Structure (Bottom 6)
 
@@ -54,8 +74,8 @@ No timers, cron jobs, or wall-clock dependencies exist.
 
 ### Penalty Rule
 
-* Players who do not fulfill payment obligations are marked as **unpaid**
-* Unpaid players are **blocked from reward participation**
+* Players who do not fulfill Normal-round payment obligations are marked as **unpaid**
+* Unpaid players are **blocked from reward participation** across the release flow
 * Penalty persists **until the end of the current leg only**
 * Penalty is automatically cleared when a new leg begins
 
@@ -141,6 +161,7 @@ The relay:
 * Reads player records
 * Computes leaderboard rankings
 * Exposes round, leg, and settlement state
+* Reuses a shared leaderboard scan when deriving tiered settlements across Easy, Normal, and Hard
 * Validates and writes deterministic on-chain records
 
 The relay does NOT:
@@ -173,6 +194,7 @@ Unpaid players:
 * Current round (block-based countdown)
 * Current leg (block-based countdown)
 * Reward distribution
+* Tiered Easy/Normal/Hard reward summary sourced from settlement data
 * Player eligibility status
 * Recent settled rounds
 * Improved release board layout for clearer reading in the shipped `v0.2.0` UI
@@ -184,6 +206,8 @@ Unpaid players:
 * Outstanding obligations (if any)
 * Penalty/block status
 * Time until next leg reset (in blocks)
+* Tiered Easy/Normal/Hard reward summary sourced from settlement data
+* Difficulty-aware featured chart title and payload matching the active run difficulty
 * Expandable details sections so additional release context stays available without crowding the default summary
 
 ### Gameplay

@@ -22,11 +22,15 @@ Round and leg IDs, block ranges, and remaining blocks are derived by the relay a
 ### Settlement model
 The public relay derives release settlements from current block height and player-owned records via [`ensureRoundFinalized()`](leaderboard-relay.js:1089).
 
-If a closed round has at least 10 qualified participants, the relay derives:
-- top 4 winner payouts: 100, 70, 20, 10 ROD via [`RELEASE_PAYOUTS`](leaderboard-relay.js:62)
-- bottom 6 liabilities: 28, 30, 33, 35, 36, 38 ROD via [`RELEASE_LIABILITIES`](leaderboard-relay.js:63)
+If a closed round has at least 10 qualified Normal participants, the relay derives:
+- top 4 Normal winner payouts: 100, 70, 20, 10 ROD via [`RELEASE_PAYOUTS`](leaderboard-relay.js:62)
+- top 4 Easy winner payouts from a 2 ROD total pot: 1, 0.7, 0.2, 0.1 via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
+- top 4 Hard winner payouts from a 2000 ROD total pot: 1000, 700, 200, 100 via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
+- bottom 6 liabilities anchored to the Normal standings slice: 28, 30, 33, 35, 36, 38 ROD via [`RELEASE_LIABILITIES`](leaderboard-relay.js:69)
 
-If a round closes without enough qualified players, the settlement is returned as `closed-no-settlement` by [`buildSettlementFromStandings()`](leaderboard-relay.js:1037).
+Easy and Hard payout tiers follow the same proportional split as Normal, while liabilities and eligibility blocking remain Normal-anchored in [`buildSettlementFromStandings()`](leaderboard-relay.js:1076). The relay reuses a shared leaderboard-candidate scan across supported payout difficulties in [`deriveSettlementForRound()`](leaderboard-relay.js:985).
+
+If a round closes without enough qualified players, the settlement is returned as `closed-no-settlement` by [`buildSettlementFromStandings()`](leaderboard-relay.js:1076).
 
 In the shipped `v0.2.0` runtime, settlements are not persisted or reused from `g/voidrunner3d/release/v1/settlements/*`. They are derived on demand from the participant-owned `g/voidrunner3d/<handle>/record` names and the deterministic round rules.
 
@@ -97,6 +101,7 @@ Shipped widgets in [`index.html`](index.html:572):
 - leg countdown
 - player eligibility status
 - reward distribution summary
+- tiered Easy/Normal/Hard reward summary
 
 The menu also shows recent settled rounds in [`index.html`](index.html:584) and the chain leaderboard by selected difficulty in [`index.html`](index.html:590).
 
@@ -109,6 +114,8 @@ The game-over panel shows release outcome data in [`index.html`](index.html):
 - outstanding obligations
 - eligibility gate / blocked status
 - next leg reset countdown
+- tiered Easy/Normal/Hard reward summary
+- featured chart title and payload that follow the active run difficulty on the game-over overlay
 - expandable details sections for inspecting release summary data with less default clutter
 
 That state is loaded through [`loadGameOverReleaseSummary()`](index.html:1411).
@@ -172,11 +179,11 @@ It runs:
 - [`game.test.js`](game.test.js)
 
 Latest validated results for the shipped release state:
-- [`relay.test.js`](relay.test.js): 55 passed, 0 failed
+- [`relay.test.js`](relay.test.js): 58 passed, 0 failed
 - [`relay-http.test.js`](relay-http.test.js): 155 passed, 0 failed
 - [`admin-relay.test.js`](admin-relay.test.js): 9 passed, 0 failed
-- [`game.test.js`](game.test.js): 68 passed, 0 failed
-- combined release validation: 287 passed, 0 failed
+- [`game.test.js`](game.test.js): 71 passed, 0 failed
+- combined release validation: 293 passed, 0 failed
 
 ## Planned follow-up
 - Nostr-based notifications are planned for future release work, covering new-leg start alerts, beaten-record alerts, and bottom-of-leaderboard alerts for registered players, with the roadmap tracked in [`doc/sprint-map.md`](doc/sprint-map.md:126).
