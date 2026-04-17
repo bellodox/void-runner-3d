@@ -60,6 +60,12 @@ const RELEASE_ROUND_BLOCK_SIZE = 120;
 const RELEASE_LEG_BLOCK_SIZE = 1440;
 const RELEASE_ROUNDS_PER_LEG = 12;
 const RELEASE_PAYOUTS = Object.freeze([100, 70, 20, 10]);
+const RELEASE_TIERED_PAYOUTS = Object.freeze({
+  normal: RELEASE_PAYOUTS,
+  easy: Object.freeze([20, 14, 4, 2]),
+  hard: Object.freeze([2000, 1400, 400, 200])
+});
+const RELEASE_SETTLEMENT_DIFFICULTIES = Object.freeze(Object.keys(RELEASE_TIERED_PAYOUTS));
 const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);
 const RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS = 10;
 const RELEASE_RECENT_SETTLED_DEFAULT_LIMIT = 5;
@@ -901,6 +907,19 @@ async function getLeaderboardCandidatesForDifficulty(difficulty) {
   return collectLeaderboardCandidates(scannedRows, difficulty);
 }
 
+function collectLeaderboardCandidatesByDifficulty(scannedRows) {
+  const candidatesByDifficulty = {};
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    candidatesByDifficulty[difficulty] = collectLeaderboardCandidates(scannedRows, difficulty);
+  }
+  return candidatesByDifficulty;
+}
+
+async function getLeaderboardCandidatesByDifficulty() {
+  const scannedRows = await scanRecordNamesByPrefix(GAME_PREFIX);
+  return collectLeaderboardCandidatesByDifficulty(scannedRows);
+}
+
 function roundScoreDelta(value) {
   if (!Number.isFinite(value)) return null;
   return Math.round(value * 1000) / 1000;
@@ -969,7 +988,25 @@ async function deriveSettlementForRound(roundId, currentBlockHeight) {
     return null;
   }
 
-  const { standingsPayload } = await buildRoundStandingsPayload(roundId, currentBlockHeight);
+  const candidatesByDifficulty = await getLeaderboardCandidatesByDifficulty();
+  const { standingsPayload } = await buildRoundStandingsPayload(
+    roundId,
+    currentBlockHeight,
+    candidatesByDifficulty[FEATURED_LEADERBOARD_DIFFICULTY] || []
+  );
+  const tieredDifficultyEntries = {};
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    if (difficulty === FEATURED_LEADERBOARD_DIFFICULTY) continue;
+    const difficultyCandidates = candidatesByDifficulty[difficulty] || [];
+    tieredDifficultyEntries[difficulty] = difficultyCandidates.slice(0, MAX_ENTRIES).map((candidateEntry, index) => ({
+      rank: index + 1,
+      handle: candidateEntry.handle,
+      score: candidateEntry.score,
+      updatedAt: candidateEntry.updatedAt
+    }));
+  }
+
+  standingsPayload.tieredDifficultyEntries = tieredDifficultyEntries;
   return buildSettlementFromStandings(standingsPayload, currentBlockHeight);
 }
 
@@ -1006,10 +1043,12 @@ async function derivePlayerLegStatus(handle, currentBlockHeight) {
   };
 }
 
-async function buildRoundStandingsPayload(roundId, currentBlockHeight) {
+async function buildRoundStandingsPayload(roundId, currentBlockHeight, featuredLeaderboardCandidates = null) {
   const roundRange = getRoundBlockRange(roundId);
   const legId = getLegIdFromBlockHeight(roundRange.blockStart);
-  const leaderboardCandidates = await getLeaderboardCandidatesForDifficulty(FEATURED_LEADERBOARD_DIFFICULTY);
+  const leaderboardCandidates = Array.isArray(featuredLeaderboardCandidates)
+    ? featuredLeaderboardCandidates
+    : await getLeaderboardCandidatesForDifficulty(FEATURED_LEADERBOARD_DIFFICULTY);
 
   const rankedEntries = leaderboardCandidates.slice(0, MAX_ENTRIES).map((candidateEntry, index) => ({
     rank: index + 1,
@@ -1054,12 +1093,26 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
     };
   }
 
-  const winners = topEntries.slice(0, RELEASE_PAYOUTS.length).map((entry, index) => ({
-    rank: entry.rank,
-    handle: entry.handle,
-    score: entry.score,
-    amount: RELEASE_PAYOUTS[index]
-  }));
+  const winners = [];
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    const payoutSchedule = RELEASE_TIERED_PAYOUTS[difficulty] || RELEASE_PAYOUTS;
+    const difficultyEntries = difficulty === FEATURED_LEADERBOARD_DIFFICULTY
+      ? topEntries
+      : standingsPayload?.tieredDifficultyEntries?.[difficulty] || [];
+
+    if (difficultyEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+      continue;
+    }
+
+    const difficultyWinners = difficultyEntries.slice(0, payoutSchedule.length).map((entry, index) => ({
+      rank: entry.rank,
+      handle: entry.handle,
+      score: entry.score,
+      difficulty,
+      amount: payoutSchedule[index]
+    }));
+    winners.push(...difficultyWinners);
+  }
   const liabilities = topEntries.slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length).map((entry, index) => ({
     rank: entry.rank,
     handle: entry.handle,

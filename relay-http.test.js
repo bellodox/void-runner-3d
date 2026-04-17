@@ -675,25 +675,25 @@ async function runTests() {
   section("release standings, settlement, eligibility, obligations, and recent rounds");
   await withRelay({
     "p/p00": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p00", recordName: "g/voidrunner3d/p00/record" }),
-    "g/voidrunner3d/p00/record": createRecordValue("p00", { normal: { score: 50, updatedAt: 100 } }),
+    "g/voidrunner3d/p00/record": createRecordValue("p00", { easy: { score: 15, updatedAt: 200 }, normal: { score: 50, updatedAt: 100 }, hard: { score: 60, updatedAt: 300 } }),
     "p/p01": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p01", recordName: "g/voidrunner3d/p01/record" }),
-    "g/voidrunner3d/p01/record": createRecordValue("p01", { normal: { score: 49, updatedAt: 101 } }),
+    "g/voidrunner3d/p01/record": createRecordValue("p01", { easy: { score: 14, updatedAt: 201 }, normal: { score: 49, updatedAt: 101 }, hard: { score: 59, updatedAt: 301 } }),
     "p/p02": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p02", recordName: "g/voidrunner3d/p02/record" }),
-    "g/voidrunner3d/p02/record": createRecordValue("p02", { normal: { score: 48, updatedAt: 102 } }),
+    "g/voidrunner3d/p02/record": createRecordValue("p02", { easy: { score: 13, updatedAt: 202 }, normal: { score: 48, updatedAt: 102 }, hard: { score: 58, updatedAt: 302 } }),
     "p/p03": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p03", recordName: "g/voidrunner3d/p03/record" }),
-    "g/voidrunner3d/p03/record": createRecordValue("p03", { normal: { score: 47, updatedAt: 103 } }),
+    "g/voidrunner3d/p03/record": createRecordValue("p03", { easy: { score: 12, updatedAt: 203 }, normal: { score: 47, updatedAt: 103 }, hard: { score: 57, updatedAt: 303 } }),
     "p/p04": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p04", recordName: "g/voidrunner3d/p04/record" }),
-    "g/voidrunner3d/p04/record": createRecordValue("p04", { normal: { score: 46, updatedAt: 104 } }),
+    "g/voidrunner3d/p04/record": createRecordValue("p04", { easy: { score: 11, updatedAt: 204 }, normal: { score: 46, updatedAt: 104 }, hard: { score: 56, updatedAt: 304 } }),
     "p/p05": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p05", recordName: "g/voidrunner3d/p05/record" }),
-    "g/voidrunner3d/p05/record": createRecordValue("p05", { normal: { score: 45, updatedAt: 105 } }),
+    "g/voidrunner3d/p05/record": createRecordValue("p05", { easy: { score: 10, updatedAt: 205 }, normal: { score: 45, updatedAt: 105 }, hard: { score: 55, updatedAt: 305 } }),
     "p/p06": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p06", recordName: "g/voidrunner3d/p06/record" }),
-    "g/voidrunner3d/p06/record": createRecordValue("p06", { normal: { score: 44, updatedAt: 106 } }),
+    "g/voidrunner3d/p06/record": createRecordValue("p06", { easy: { score: 9, updatedAt: 206 }, normal: { score: 44, updatedAt: 106 }, hard: { score: 54, updatedAt: 306 } }),
     "p/p07": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p07", recordName: "g/voidrunner3d/p07/record" }),
-    "g/voidrunner3d/p07/record": createRecordValue("p07", { normal: { score: 43, updatedAt: 107 } }),
+    "g/voidrunner3d/p07/record": createRecordValue("p07", { easy: { score: 8, updatedAt: 207 }, normal: { score: 43, updatedAt: 107 }, hard: { score: 53, updatedAt: 307 } }),
     "p/p08": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p08", recordName: "g/voidrunner3d/p08/record" }),
-    "g/voidrunner3d/p08/record": createRecordValue("p08", { normal: { score: 42, updatedAt: 108 } }),
+    "g/voidrunner3d/p08/record": createRecordValue("p08", { easy: { score: 7, updatedAt: 208 }, normal: { score: 42, updatedAt: 108 }, hard: { score: 52, updatedAt: 308 } }),
     "p/p09": JSON.stringify({ version: 1, game: "voidrunner3d", handle: "p09", recordName: "g/voidrunner3d/p09/record" }),
-    "g/voidrunner3d/p09/record": createRecordValue("p09", { normal: { score: 41, updatedAt: 109 } })
+    "g/voidrunner3d/p09/record": createRecordValue("p09", { easy: { score: 6, updatedAt: 209 }, normal: { score: 41, updatedAt: 109 }, hard: { score: 51, updatedAt: 309 } })
   }, async () => {
     const standingsResponse = await request("GET", "/release/current-standings");
     assert("current standings endpoint returns 200", standingsResponse.status === 200, `got ${standingsResponse.status}`);
@@ -703,9 +703,14 @@ async function runTests() {
     const settlementResponse = await request("GET", "/release/round-settlement?roundId=101");
     assert("round settlement endpoint returns 200 for closed round", settlementResponse.status === 200, `got ${settlementResponse.status}`);
     assert("round settlement status is settled", settlementResponse.body?.settlement?.status === "settled", JSON.stringify(settlementResponse.body?.settlement));
-    assert("round settlement winners has top-4 payouts", settlementResponse.body?.settlement?.winners?.length === 4, JSON.stringify(settlementResponse.body?.settlement));
+    assert("round settlement winners has top-4 payouts per eligible difficulty", settlementResponse.body?.settlement?.winners?.length === 12, JSON.stringify(settlementResponse.body?.settlement));
     assert("round settlement liabilities has bottom-6 obligations", settlementResponse.body?.settlement?.liabilities?.length === 6, JSON.stringify(settlementResponse.body?.settlement));
-    assert("round settlement payout schedule matches release plan", settlementResponse.body?.settlement?.winners?.map((winner) => winner.amount).join(",") === "100,70,20,10", JSON.stringify(settlementResponse.body?.settlement?.winners));
+    assert(
+      "round settlement payout schedule matches difficulty-tiered release plan",
+      settlementResponse.body?.settlement?.winners?.map((winner) => `${winner.difficulty}:${winner.amount}`).join(",")
+        === "normal:100,normal:70,normal:20,normal:10,easy:20,easy:14,easy:4,easy:2,hard:2000,hard:1400,hard:400,hard:200",
+      JSON.stringify(settlementResponse.body?.settlement?.winners)
+    );
     assert("round settlement liability schedule matches release plan", settlementResponse.body?.settlement?.liabilities?.map((entry) => entry.amount).join(",") === "28,30,33,35,36,38", JSON.stringify(settlementResponse.body?.settlement?.liabilities));
 
     const eligibilityResponse = await request("GET", "/release/player-eligibility?handle=p09");

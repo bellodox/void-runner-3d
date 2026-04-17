@@ -16,6 +16,12 @@ const RELEASE_ROUND_BLOCK_SIZE = 120;
 const RELEASE_LEG_BLOCK_SIZE = 1440;
 const RELEASE_ROUNDS_PER_LEG = 12;
 const RELEASE_PAYOUTS = Object.freeze([100, 70, 20, 10]);
+const RELEASE_TIERED_PAYOUTS = Object.freeze({
+  normal: RELEASE_PAYOUTS,
+  easy: Object.freeze([20, 14, 4, 2]),
+  hard: Object.freeze([2000, 1400, 400, 200])
+});
+const RELEASE_SETTLEMENT_DIFFICULTIES = Object.freeze(Object.keys(RELEASE_TIERED_PAYOUTS));
 const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);
 const RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS = 10;
 
@@ -335,6 +341,26 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
     };
   }
 
+  const winners = [];
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    const payoutSchedule = RELEASE_TIERED_PAYOUTS[difficulty] || RELEASE_PAYOUTS;
+    const difficultyEntries = difficulty === "normal"
+      ? topEntries
+      : standingsPayload?.tieredDifficultyEntries?.[difficulty] || [];
+
+    if (difficultyEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+      continue;
+    }
+
+    winners.push(...difficultyEntries.slice(0, payoutSchedule.length).map((entry, index) => ({
+      rank: entry.rank,
+      handle: entry.handle,
+      score: entry.score,
+      difficulty,
+      amount: payoutSchedule[index]
+    })));
+  }
+
   return {
     version: 1,
     game: "voidrunner3d",
@@ -347,12 +373,7 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
     qualifiedParticipants: topEntries.length,
     minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
     generatedAtBlock: currentBlockHeight,
-    winners: topEntries.slice(0, RELEASE_PAYOUTS.length).map((entry, index) => ({
-      rank: entry.rank,
-      handle: entry.handle,
-      score: entry.score,
-      amount: RELEASE_PAYOUTS[index]
-    })),
+    winners,
     liabilities: topEntries.slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length).map((entry, index) => ({
       rank: entry.rank,
       handle: entry.handle,
@@ -760,13 +781,25 @@ section("release settlement derivation");
       rank: index + 1,
       handle: `p${String(index).padStart(2, "0")}`,
       score: 100 - index
-    }))
+    })),
+    tieredDifficultyEntries: {
+      easy: Array.from({ length: 10 }, (_, index) => ({
+        rank: index + 1,
+        handle: `e${String(index).padStart(2, "0")}`,
+        score: 80 - index
+      })),
+      hard: Array.from({ length: 10 }, (_, index) => ({
+        rank: index + 1,
+        handle: `h${String(index).padStart(2, "0")}`,
+        score: 120 - index
+      }))
+    }
   }, 12345);
 
   const serializedSettlement = serializeRoundSettlementValue(settledPayload);
   const parsedSettlement = parseRoundSettlementValue(serializedSettlement, 101);
   assert("round settlement serialization preserves settled status", parsedSettlement?.status === "settled", JSON.stringify(parsedSettlement));
-  assert("round settlement serialization preserves winner count", Array.isArray(parsedSettlement?.winners) && parsedSettlement.winners.length === 4, JSON.stringify(parsedSettlement?.winners));
+  assert("round settlement serialization preserves winner count", Array.isArray(parsedSettlement?.winners) && parsedSettlement.winners.length === 12, JSON.stringify(parsedSettlement?.winners));
   assert("round settlement parser rejects mismatched round ids", parseRoundSettlementValue(serializedSettlement, 102) === null);
   {
     const tamperedEnvelope = JSON.parse(serializedSettlement);
@@ -788,13 +821,30 @@ section("release settlement derivation");
       rank: index + 1,
       handle: `p${String(index).padStart(2, "0")}`,
       score: 100 - index
-    }))
+    })),
+    tieredDifficultyEntries: {
+      easy: Array.from({ length: 10 }, (_, index) => ({
+        rank: index + 1,
+        handle: `e${String(index).padStart(2, "0")}`,
+        score: 80 - index
+      })),
+      hard: Array.from({ length: 10 }, (_, index) => ({
+        rank: index + 1,
+        handle: `h${String(index).padStart(2, "0")}`,
+        score: 120 - index
+      }))
+    }
   }, 12345);
 
   assert("qualified round produces settled status", settledPayload.status === "settled", JSON.stringify(settledPayload));
-  assert("qualified round awards top 4 winners", settledPayload.winners.length === 4, JSON.stringify(settledPayload.winners));
+  assert("qualified round awards top 4 winners per eligible difficulty", settledPayload.winners.length === 12, JSON.stringify(settledPayload.winners));
   assert("qualified round assigns bottom 6 liabilities", settledPayload.liabilities.length === 6, JSON.stringify(settledPayload.liabilities));
-  assert("winner payouts match release amounts", settledPayload.winners.map((entry) => entry.amount).join(",") === RELEASE_PAYOUTS.join(","), JSON.stringify(settledPayload.winners));
+  assert(
+    "winner payouts match tiered release amounts by difficulty",
+    settledPayload.winners.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",")
+      === "normal:100,normal:70,normal:20,normal:10,easy:20,easy:14,easy:4,easy:2,hard:2000,hard:1400,hard:400,hard:200",
+    JSON.stringify(settledPayload.winners)
+  );
   assert("liability amounts match release schedule", settledPayload.liabilities.map((entry) => entry.amount).join(",") === RELEASE_LIABILITIES.join(","), JSON.stringify(settledPayload.liabilities));
   assert("liabilities start as due with zero amountPaid", settledPayload.liabilities.every((entry) => entry.status === "due" && entry.amountPaid === 0), JSON.stringify(settledPayload.liabilities));
 }
@@ -848,15 +898,23 @@ section("property-based invariants for settlement schedules");
         legId: Math.floor((10 + sampleIndex) / RELEASE_ROUNDS_PER_LEG),
         roundStart: (10 + sampleIndex) * RELEASE_ROUND_BLOCK_SIZE,
         roundEnd: ((10 + sampleIndex) * RELEASE_ROUND_BLOCK_SIZE) + RELEASE_ROUND_BLOCK_SIZE - 1,
-        entries
+        entries,
+        tieredDifficultyEntries: {
+          easy: entries,
+          hard: entries
+        }
       },
       50000 + sampleIndex
     );
 
     const shouldSettle = participantCount >= RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS;
-    const winnersCountValid = settlementPayload.winners.length === (shouldSettle ? RELEASE_PAYOUTS.length : 0);
+    const winnersCountValid = settlementPayload.winners.length === (shouldSettle ? RELEASE_PAYOUTS.length * 3 : 0);
     const liabilitiesCountValid = settlementPayload.liabilities.length === (shouldSettle ? RELEASE_LIABILITIES.length : 0);
-    const winnersAmountsValid = settlementPayload.winners.map((entry) => entry.amount).join(",") === (shouldSettle ? RELEASE_PAYOUTS.join(",") : "");
+    const winnersAmountsValid = settlementPayload.winners.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",") === (
+      shouldSettle
+        ? "normal:100,normal:70,normal:20,normal:10,easy:20,easy:14,easy:4,easy:2,hard:2000,hard:1400,hard:400,hard:200"
+        : ""
+    );
     const liabilitiesAmountsValid = settlementPayload.liabilities.map((entry) => entry.amount).join(",") === (shouldSettle ? RELEASE_LIABILITIES.join(",") : "");
     const statusValid = shouldSettle ? settlementPayload.status === "settled" : settlementPayload.status === "closed-no-settlement";
 
@@ -870,6 +928,38 @@ section("property-based invariants for settlement schedules");
     invariantFailures === 0,
     `failures=${invariantFailures}`
   );
+}
+
+section("release settlement tier eligibility per difficulty");
+{
+  const settledPayload = buildSettlementFromStandings({
+    roundId: 201,
+    legId: 16,
+    roundStart: 24120,
+    roundEnd: 24239,
+    entries: Array.from({ length: 10 }, (_, index) => ({
+      rank: index + 1,
+      handle: `n${String(index).padStart(2, "0")}`,
+      score: 200 - index
+    })),
+    tieredDifficultyEntries: {
+      easy: Array.from({ length: 9 }, (_, index) => ({
+        rank: index + 1,
+        handle: `e${String(index).padStart(2, "0")}`,
+        score: 120 - index
+      })),
+      hard: Array.from({ length: 10 }, (_, index) => ({
+        rank: index + 1,
+        handle: `h${String(index).padStart(2, "0")}`,
+        score: 320 - index
+      }))
+    }
+  }, 25000);
+
+  const winnerDifficulties = settledPayload.winners.map((entry) => entry.difficulty);
+  assert("normal tier winners remain eligible at 10 participants", winnerDifficulties.filter((difficulty) => difficulty === "normal").length === 4, JSON.stringify(settledPayload.winners));
+  assert("easy tier winners are skipped below 10 participants", !winnerDifficulties.includes("easy"), JSON.stringify(settledPayload.winners));
+  assert("hard tier winners remain eligible at 10 participants", winnerDifficulties.filter((difficulty) => difficulty === "hard").length === 4, JSON.stringify(settledPayload.winners));
 }
 
 console.log(`\n════════════════════════════════`);
