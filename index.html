@@ -609,6 +609,29 @@
       pointer-events: auto;
     }
 
+    #projectLinkFooter {
+      position: fixed;
+      z-index: 6;
+      left: 50%;
+      bottom: 12px;
+      transform: translateX(-50%);
+      pointer-events: auto;
+      font-size: 12px;
+      color: #9cc8e2;
+      text-decoration: none;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 999px;
+      background: rgba(8, 16, 30, 0.78);
+      padding: 7px 12px;
+      letter-spacing: 0.03em;
+    }
+
+    #projectLinkFooter:hover {
+      color: #dcefff;
+      border-color: rgba(121, 215, 255, 0.6);
+      box-shadow: 0 0 12px rgba(102, 224, 255, 0.25);
+    }
+
     #playerHandleBadge {
       font-size: 11px;
       padding: 7px 10px;
@@ -771,6 +794,8 @@
     <button id="muteBtn" class="small-btn">MUTE: OFF</button>
     <button id="mouseToggleBtn" class="small-btn">MOUSE: ON</button>
   </div>
+
+  <a id="projectLinkFooter" href="https://github.com/bellodox/void-runner-3d" target="_blank" rel="noopener noreferrer">github.com/bellodox/void-runner-3d</a>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
