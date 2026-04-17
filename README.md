@@ -28,11 +28,12 @@ Settlement eligibility is now evaluated per difficulty in [`buildSettlementFromS
 - winners are paid only for difficulties that independently qualify
 - liabilities are derived per eligible difficulty using the same bottom-six schedule
 
-The payout ladders remain:
-- Normal: `100, 70, 20, 10` via [`RELEASE_PAYOUTS`](leaderboard-relay.js:62)
-- Easy: `1, 0.7, 0.2, 0.1` from a 2 ROD total pot via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
-- Hard: `1000, 700, 200, 100` from a 2000 ROD total pot via [`RELEASE_TIERED_PAYOUTS`](leaderboard-relay.js:63)
-- liabilities per eligible difficulty: `28, 30, 33, 35, 36, 38` via [`RELEASE_LIABILITIES`](leaderboard-relay.js:69)
+The payout and liability ladders are now tiered per difficulty, with each difficulty's bottom six liabilities summing exactly to that difficulty's top four reward pot:
+- **Normal**: rewards `100, 70, 20, 10` / liabilities `28, 30, 33, 35, 36, 38` | total pot `200 ROD`
+- **Easy**: rewards `1, 0.7, 0.2, 0.1` / liabilities `0.28, 0.3, 0.33, 0.35, 0.36, 0.38` | total pot `2 ROD`
+- **Hard**: rewards `1000, 700, 200, 100` / liabilities `280, 300, 330, 350, 360, 380` | total pot `2000 ROD`
+
+The proportional distribution is identical across all difficulties - only the scale changes.
 
 Settlement payloads now include per-difficulty counts in `qualifiedParticipantsByDifficulty` while preserving `qualifiedParticipants` for compatibility. Player obligations are aggregated per handle across eligible difficulties within the round by [`derivePlayerLegStatus()`](leaderboard-relay.js:1013). The relay continues to reuse a shared leaderboard-candidate scan across supported payout difficulties in [`deriveSettlementForRound()`](leaderboard-relay.js:985).
 

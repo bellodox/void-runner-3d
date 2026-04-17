@@ -10,6 +10,10 @@
 
 ### Release economy
 - Clarified that Easy `2 ROD` and Hard `2000 ROD` are whole-tier pots, not first-place payouts, with the authoritative schedules now reflected from [`leaderboard-relay.js`](leaderboard-relay.js): Easy `1, 0.7, 0.2, 0.1`, Normal `100, 70, 20, 10`, and Hard `1000, 700, 200, 100`.
+- Fixed settlement economy imbalance: liabilities are now tiered per difficulty to exactly match each difficulty's reward pool totals.
+- Easy liabilities: `0.28, 0.3, 0.33, 0.35, 0.36, 0.38` | total `2.0`
+- Normal liabilities: `28, 30, 33, 35, 36, 38` | total `200`
+- Hard liabilities: `280, 300, 330, 350, 360, 380` | total `2000`
 - Documented that settlement qualification now evaluates Easy, Normal, and Hard independently, winners/liabilities are derived per eligible difficulty, and player obligations aggregate per handle across eligible difficulties in [`buildSettlementFromStandings()`](leaderboard-relay.js:1082) and [`derivePlayerLegStatus()`](leaderboard-relay.js:1013).
 - Documented settlement payload compatibility fields so `qualifiedParticipantsByDifficulty` is present while `qualifiedParticipants` remains available.
 

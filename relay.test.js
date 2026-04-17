@@ -23,6 +23,11 @@ const RELEASE_TIERED_PAYOUTS = Object.freeze({
 });
 const RELEASE_SETTLEMENT_DIFFICULTIES = Object.freeze(Object.keys(RELEASE_TIERED_PAYOUTS));
 const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);
+const RELEASE_TIERED_LIABILITIES = Object.freeze({
+  normal: RELEASE_LIABILITIES,
+  easy: Object.freeze([0.28, 0.3, 0.33, 0.35, 0.36, 0.38]),
+  hard: Object.freeze([280, 300, 330, 350, 360, 380])
+});
 const RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS = 10;
 
 const difficultyKeys = Object.freeze({
@@ -120,6 +125,30 @@ function buildPrizeWindowStatus(prizeType, currentBlockHeight) {
   const blocksIntoWindow = currentBlockHeight - currentWindowStartHeight;
   const blocksRemaining = Math.max(0, windowSize - (blocksIntoWindow + 1));
   const percentComplete = Math.round((((blocksIntoWindow + 1) / windowSize) * 100) * 1000) / 1000;
+
+  const liabilities = [];
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    const difficultyEntries = difficulty === "normal"
+      ? topEntries
+      : standingsPayload?.tieredDifficultyEntries?.[difficulty] || [];
+
+    if (difficultyEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+      continue;
+    }
+
+    const liabilitySchedule = RELEASE_TIERED_LIABILITIES[difficulty] || RELEASE_LIABILITIES;
+    liabilities.push(...difficultyEntries
+      .slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + liabilitySchedule.length)
+      .map((entry, index) => ({
+        rank: entry.rank,
+        handle: entry.handle,
+        score: entry.score,
+        difficulty,
+        amount: liabilitySchedule[index],
+        amountPaid: 0,
+        status: "due"
+      })));
+  }
 
   return {
     type: prizeType,
@@ -361,6 +390,30 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
     })));
   }
 
+  const liabilities = [];
+  for (const difficulty of RELEASE_SETTLEMENT_DIFFICULTIES) {
+    const difficultyEntries = difficulty === "normal"
+      ? topEntries
+      : standingsPayload?.tieredDifficultyEntries?.[difficulty] || [];
+
+    if (difficultyEntries.length < RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS) {
+      continue;
+    }
+
+    const liabilitySchedule = RELEASE_TIERED_LIABILITIES[difficulty] || RELEASE_LIABILITIES;
+    liabilities.push(...difficultyEntries
+      .slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + liabilitySchedule.length)
+      .map((entry, index) => ({
+        rank: entry.rank,
+        handle: entry.handle,
+        score: entry.score,
+        difficulty,
+        amount: liabilitySchedule[index],
+        amountPaid: 0,
+        status: "due"
+      })));
+  }
+
   return {
     version: 1,
     game: "voidrunner3d",
@@ -374,14 +427,7 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
     minimumRequiredParticipants: RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS,
     generatedAtBlock: currentBlockHeight,
     winners,
-    liabilities: topEntries.slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length).map((entry, index) => ({
-      rank: entry.rank,
-      handle: entry.handle,
-      score: entry.score,
-      amount: RELEASE_LIABILITIES[index],
-      amountPaid: 0,
-      status: "due"
-    }))
+    liabilities
   };
 }
 
@@ -838,14 +884,19 @@ section("release settlement derivation");
 
   assert("qualified round produces settled status", settledPayload.status === "settled", JSON.stringify(settledPayload));
   assert("qualified round awards top 4 winners per eligible difficulty", settledPayload.winners.length === 12, JSON.stringify(settledPayload.winners));
-  assert("qualified round assigns bottom 6 liabilities", settledPayload.liabilities.length === 6, JSON.stringify(settledPayload.liabilities));
+  assert("qualified round assigns bottom 6 liabilities per eligible difficulty", settledPayload.liabilities.length === 18, JSON.stringify(settledPayload.liabilities));
   assert(
     "winner payouts match tiered release amounts by difficulty",
     settledPayload.winners.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",")
       === "normal:100,normal:70,normal:20,normal:10,easy:1,easy:0.7,easy:0.2,easy:0.1,hard:1000,hard:700,hard:200,hard:100",
     JSON.stringify(settledPayload.winners)
   );
-  assert("liability amounts match release schedule", settledPayload.liabilities.map((entry) => entry.amount).join(",") === RELEASE_LIABILITIES.join(","), JSON.stringify(settledPayload.liabilities));
+  assert(
+    "liability amounts match release schedule by difficulty",
+    settledPayload.liabilities.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",")
+      === "normal:28,normal:30,normal:33,normal:35,normal:36,normal:38,easy:0.28,easy:0.3,easy:0.33,easy:0.35,easy:0.36,easy:0.38,hard:280,hard:300,hard:330,hard:350,hard:360,hard:380",
+    JSON.stringify(settledPayload.liabilities)
+  );
   assert("liabilities start as due with zero amountPaid", settledPayload.liabilities.every((entry) => entry.status === "due" && entry.amountPaid === 0), JSON.stringify(settledPayload.liabilities));
 }
 
@@ -909,13 +960,17 @@ section("property-based invariants for settlement schedules");
 
     const shouldSettle = participantCount >= RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS;
     const winnersCountValid = settlementPayload.winners.length === (shouldSettle ? RELEASE_PAYOUTS.length * 3 : 0);
-    const liabilitiesCountValid = settlementPayload.liabilities.length === (shouldSettle ? RELEASE_LIABILITIES.length : 0);
+    const liabilitiesCountValid = settlementPayload.liabilities.length === (shouldSettle ? RELEASE_LIABILITIES.length * 3 : 0);
     const winnersAmountsValid = settlementPayload.winners.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",") === (
       shouldSettle
         ? "normal:100,normal:70,normal:20,normal:10,easy:1,easy:0.7,easy:0.2,easy:0.1,hard:1000,hard:700,hard:200,hard:100"
         : ""
     );
-    const liabilitiesAmountsValid = settlementPayload.liabilities.map((entry) => entry.amount).join(",") === (shouldSettle ? RELEASE_LIABILITIES.join(",") : "");
+    const liabilitiesAmountsValid = settlementPayload.liabilities.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",") === (
+      shouldSettle
+        ? "normal:28,normal:30,normal:33,normal:35,normal:36,normal:38,easy:0.28,easy:0.3,easy:0.33,easy:0.35,easy:0.36,easy:0.38,hard:280,hard:300,hard:330,hard:350,hard:360,hard:380"
+        : ""
+    );
     const statusValid = shouldSettle ? settlementPayload.status === "settled" : settlementPayload.status === "closed-no-settlement";
 
     if (!(winnersCountValid && liabilitiesCountValid && winnersAmountsValid && liabilitiesAmountsValid && statusValid)) {

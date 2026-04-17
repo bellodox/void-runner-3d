@@ -67,6 +67,11 @@ const RELEASE_TIERED_PAYOUTS = Object.freeze({
 });
 const RELEASE_SETTLEMENT_DIFFICULTIES = Object.freeze(Object.keys(RELEASE_TIERED_PAYOUTS));
 const RELEASE_LIABILITIES = Object.freeze([28, 30, 33, 35, 36, 38]);
+const RELEASE_TIERED_LIABILITIES = Object.freeze({
+  normal: RELEASE_LIABILITIES,
+  easy: Object.freeze([0.28, 0.3, 0.33, 0.35, 0.36, 0.38]),
+  hard: Object.freeze([280, 300, 330, 350, 360, 380])
+});
 const RELEASE_MIN_ELIGIBLE_SETTLEMENT_PLAYERS = 10;
 const RELEASE_RECENT_SETTLED_DEFAULT_LIMIT = 5;
 const RELEASE_RECENT_SETTLED_MAX_LIMIT = 20;
@@ -1144,14 +1149,16 @@ function buildSettlementFromStandings(standingsPayload, currentBlockHeight) {
       continue;
     }
 
+    const liabilitySchedule = RELEASE_TIERED_LIABILITIES[difficulty] || RELEASE_LIABILITIES;
+
     const difficultyLiabilities = difficultyEntries
-      .slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + RELEASE_LIABILITIES.length)
+      .slice(RELEASE_PAYOUTS.length, RELEASE_PAYOUTS.length + liabilitySchedule.length)
       .map((entry, index) => ({
         rank: entry.rank,
         handle: entry.handle,
         score: entry.score,
         difficulty,
-        amount: RELEASE_LIABILITIES[index],
+        amount: liabilitySchedule[index],
         amountPaid: 0,
         status: "due"
       }));

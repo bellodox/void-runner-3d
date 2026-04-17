@@ -42,7 +42,10 @@ Primary automated suites:
   - Normal winners include amounts `100,70,20,10` when Normal qualifies
   - Easy winners include amounts `1,0.7,0.2,0.1` when Easy qualifies
   - Hard winners include amounts `1000,700,200,100` when Hard qualifies
-  - Liabilities are emitted per eligible difficulty with amounts `28,30,33,35,36,38`
+  - Liabilities are emitted per eligible difficulty with matching tiered amounts
+    * Normal: `28,30,33,35,36,38`
+    * Easy: `0.28,0.3,0.33,0.35,0.36,0.38`
+    * Hard: `280,300,330,350,360,380`
   - `qualifiedParticipants` remains present for compatibility
   - **Fail criteria**
   - Any payout/liability schedule drift or invalid status transition

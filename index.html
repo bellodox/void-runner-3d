@@ -96,6 +96,32 @@
       margin: 18px 0 24px;
     }
 
+    .mode-summary-board {
+      margin: 12px 0 8px;
+      border: 1px solid rgba(121, 215, 255, 0.35);
+      border-radius: 10px;
+      background: rgba(7, 14, 28, 0.6);
+      padding: 10px 12px;
+      text-align: left;
+      display: grid;
+      gap: 6px;
+    }
+
+    .mode-summary-title {
+      margin: 0;
+      font-size: 0.76rem;
+      color: #9cc8e2;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .mode-summary-line {
+      margin: 0;
+      color: #dcefff;
+      font-size: 0.8rem;
+      line-height: 1.42;
+    }
+
     .difficulty-btn,
     .action-btn,
     .small-btn {
@@ -319,6 +345,20 @@
 
     .recent-settled-list li:last-child {
       border-bottom: none;
+    }
+
+    .overlay-help-list {
+      margin: 0;
+      padding-left: 16px;
+      display: grid;
+      gap: 6px;
+      color: #dcefff;
+      font-size: 0.79rem;
+      line-height: 1.45;
+    }
+
+    .overlay-help-list li {
+      margin: 0;
     }
 
     .recent-settled-list li.empty {
@@ -726,6 +766,11 @@
     <div class="panel" id="menuPanel">
       <h1>Void Runner</h1>
       <p class="subtitle">Dodge deep-space debris and survive the void.</p>
+      <div class="mode-summary-board" aria-live="polite">
+        <p id="modeSummaryTitle" class="mode-summary-title">Mode: Normal</p>
+        <p id="modeGameplaySummaryText" class="mode-summary-line">Gameplay: Standard asteroid pressure with balanced speed and spawn growth.</p>
+        <p id="modeEconomySummaryText" class="mode-summary-line">Economy: Top 4 rewards 100 / 70 / 20 / 10. Next 6 liabilities 28 / 30 / 33 / 35 / 36 / 38.</p>
+      </div>
       <div class="difficulty-row">
         <button class="difficulty-btn" data-difficulty="easy">Easy</button>
         <button class="difficulty-btn active" data-difficulty="normal">Normal</button>
@@ -758,6 +803,29 @@
         <div class="overlay-section-body recent-settled-board" aria-live="polite">
           <p id="recentSettledRoundsStatusText" class="recent-settled-status">Loading recent settlements...</p>
           <ol id="recentSettledRoundsList" class="recent-settled-list"></ol>
+        </div>
+      </details>
+
+      <details class="overlay-section-details">
+        <summary>How the round economy works</summary>
+        <div class="overlay-section-body" aria-live="polite">
+          <ul class="overlay-help-list">
+            <li>Round standings are evaluated per difficulty when the round closes.</li>
+            <li>Settlement runs for a difficulty only when it has at least 10 qualified players.</li>
+            <li id="economyHelpModeRewardsText">Normal rewards: 100 / 70 / 20 / 10. Liabilities: 28 / 30 / 33 / 35 / 36 / 38.</li>
+            <li>Liabilities block new submissions until resolved or the leg resets.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="overlay-section-details">
+        <summary>Power-Ups</summary>
+        <div class="overlay-section-body">
+          <ul class="overlay-help-list">
+            <li><strong>Shield</strong>: Temporary. While active, asteroid collisions destroy the asteroid instead of ending the run.</li>
+            <li>Shield collisions trigger salvage, adding bonus score with a timed salvage multiplier (starts at x1.5, stacks up to x3.0).</li>
+            <li><strong>Boost</strong>: Temporary speed increase for faster lane changes and recovery.</li>
+          </ul>
         </div>
       </details>
     </div>
@@ -898,6 +966,10 @@
       const featuredRankTitle = document.getElementById("featuredRankTitle");
       const featuredRankContextText = document.getElementById("featuredRankContextText");
       const featuredRankDeltaText = document.getElementById("featuredRankDeltaText");
+      const modeSummaryTitle = document.getElementById("modeSummaryTitle");
+      const modeGameplaySummaryText = document.getElementById("modeGameplaySummaryText");
+      const modeEconomySummaryText = document.getElementById("modeEconomySummaryText");
+      const economyHelpModeRewardsText = document.getElementById("economyHelpModeRewardsText");
 
       const RELAY_BASE_URL = "http://127.0.0.1:8787/api";
       const FEATURED_LEADERBOARD_DIFFICULTY = "normal";
@@ -905,6 +977,21 @@
       const allowedDifficultyKeys = new Set(["easy", "normal", "hard"]);
       const RECENT_WINNERS_PRIZE_TYPES = Object.freeze(["hourly", "daily", "weekly"]);
       const MAX_RECENT_WINNERS = 3;
+      const MODE_PAYOUTS = Object.freeze({
+        easy: [1, 0.7, 0.2, 0.1],
+        normal: [100, 70, 20, 10],
+        hard: [1000, 700, 200, 100]
+      });
+      const MODE_LIABILITIES = Object.freeze({
+        easy: [0.28, 0.3, 0.33, 0.35, 0.36, 0.38],
+        normal: [28, 30, 33, 35, 36, 38],
+        hard: [280, 300, 330, 350, 360, 380]
+      });
+      const MODE_GAMEPLAY_SUMMARIES = Object.freeze({
+        easy: "Gameplay: Gentler asteroid flow with slower movement and growth.",
+        normal: "Gameplay: Standard asteroid pressure with balanced speed and spawn growth.",
+        hard: "Gameplay: Dense asteroid flow with faster movement and aggressive growth."
+      });
 
       let lastFinalScore = 0;
       let chainEntries = [];
@@ -1920,6 +2007,25 @@
         featuredRankContextText.style.color = color;
       }
 
+      function formatModeAmounts(values) {
+        if (!Array.isArray(values)) return "--";
+        return values.map((value) => Number(value).toString()).join(" / ");
+      }
+
+      function renderModeSummary() {
+        const difficultyKey = DIFFICULTY[selectedDifficulty] ? selectedDifficulty : "normal";
+        const difficultyLabel = DIFFICULTY[difficultyKey].label;
+        const modeRewards = MODE_PAYOUTS[difficultyKey] || MODE_PAYOUTS.normal;
+        const modeLiabilities = MODE_LIABILITIES[difficultyKey] || MODE_LIABILITIES.normal;
+        const rewardText = formatModeAmounts(modeRewards);
+        const liabilityText = formatModeAmounts(modeLiabilities);
+
+        modeSummaryTitle.textContent = `Mode: ${difficultyLabel}`;
+        modeGameplaySummaryText.textContent = MODE_GAMEPLAY_SUMMARIES[difficultyKey] || MODE_GAMEPLAY_SUMMARIES.normal;
+        modeEconomySummaryText.textContent = `Economy: Top 4 rewards ${rewardText}. Next 6 liabilities ${liabilityText}.`;
+        economyHelpModeRewardsText.textContent = `${difficultyLabel} rewards: ${rewardText}. Liabilities: ${liabilityText}.`;
+      }
+
       function setFeaturedRankDeltaText(text, color = "#dcefff") {
         featuredRankDeltaText.textContent = text;
         featuredRankDeltaText.style.color = color;
@@ -2857,6 +2963,7 @@
         for (const btn of difficultyButtons) {
           btn.classList.toggle("active", btn.dataset.difficulty === difficultyKey);
         }
+        renderModeSummary();
         loadHighScore();
         updateHud();
         loadChainLeaderboard();

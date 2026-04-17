@@ -65,12 +65,19 @@ Easy intentionally uses fractional payouts so the total pot stays exactly 2 ROD 
 
 ### Contribution Structure (Bottom 6)
 
-* 5th: 28 ROD
-* 6th: 30 ROD
-* 7th: 33 ROD
-* 8th: 35 ROD
-* 9th: 36 ROD
-* 10th: 38 ROD
+Liabilities are tiered per difficulty, with each difficulty's contribution pool matching exactly that difficulty's reward pool:
+
+| Position | Easy | Normal | Hard |
+|----------|------|--------|------|
+| 5th | 0.28 | 28 | 280 |
+| 6th | 0.30 | 30 | 300 |
+| 7th | 0.33 | 33 | 330 |
+| 8th | 0.35 | 35 | 350 |
+| 9th | 0.36 | 36 | 360 |
+| 10th | 0.38 | 38 | 380 |
+| **Total** | **2.0** | **200** | **2000** |
+
+Proportional distribution is identical across all difficulties.
 
 ### Penalty Rule
 

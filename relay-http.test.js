@@ -711,7 +711,7 @@ async function runTests() {
         === "normal:100,normal:70,normal:20,normal:10,easy:1,easy:0.7,easy:0.2,easy:0.1,hard:1000,hard:700,hard:200,hard:100",
       JSON.stringify(settlementResponse.body?.settlement?.winners)
     );
-    assert("round settlement liability schedule matches release plan per eligible difficulty", settlementResponse.body?.settlement?.liabilities?.map((entry) => entry.amount).join(",") === "28,30,33,35,36,38,28,30,33,35,36,38,28,30,33,35,36,38", JSON.stringify(settlementResponse.body?.settlement?.liabilities));
+    assert("round settlement liability schedule matches release plan per eligible difficulty", settlementResponse.body?.settlement?.liabilities?.map((entry) => `${entry.difficulty}:${entry.amount}`).join(",") === "normal:28,normal:30,normal:33,normal:35,normal:36,normal:38,easy:0.28,easy:0.3,easy:0.33,easy:0.35,easy:0.36,easy:0.38,hard:280,hard:300,hard:330,hard:350,hard:360,hard:380", JSON.stringify(settlementResponse.body?.settlement?.liabilities));
 
     const eligibilityResponse = await request("GET", "/release/player-eligibility?handle=p09");
     assert("player eligibility endpoint returns 200", eligibilityResponse.status === 200, `got ${eligibilityResponse.status}`);
@@ -768,7 +768,7 @@ async function runTests() {
     const obligationsResponse = await request("GET", "/release/player-obligations?handle=p09");
     assert("aggregated obligations endpoint returns 200", obligationsResponse.status === 200, `got ${obligationsResponse.status}`);
     assert("aggregated obligations include liabilities from multiple qualified difficulties", obligationsResponse.body?.obligations?.outstanding?.length >= 1, JSON.stringify(obligationsResponse.body?.obligations));
-    assert("aggregated outstanding amount sums liabilities across difficulties for each round", obligationsResponse.body?.obligations?.outstanding?.every((entry) => entry.amountDue === 76 && Array.isArray(entry.difficulties) && entry.difficulties.includes("easy") && entry.difficulties.includes("hard")), JSON.stringify(obligationsResponse.body?.obligations));
+    assert("aggregated outstanding amount sums liabilities across difficulties for each round", obligationsResponse.body?.obligations?.outstanding?.every((entry) => entry.amountDue === 380.38 && Array.isArray(entry.difficulties) && entry.difficulties.includes("easy") && entry.difficulties.includes("hard")), JSON.stringify(obligationsResponse.body?.obligations));
   });
 
   section("release settlement marks insufficient participants explicitly");
