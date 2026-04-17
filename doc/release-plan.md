@@ -1,12 +1,12 @@
-# Void Runner 3D — Release Design Reference for v0.2.0
+# Void Runner 3D — Release Design Reference for v0.2.1
 
 ## Core Principles
 
-* All reward, round, leg, settlement, and penalty state is stored **on-chain only**.
+* All reward, round, leg, settlement, and penalty state is derived from authoritative on-chain player records and deterministic relay rules.
 * The system is **deterministic** and derived from **block height**, not wall-clock time.
 * No admin intervention is required for round progression, settlement visibility, or penalty enforcement.
-* The relay acts as a **stateless interpreter** of on-chain data.
-* In `v0.2.0`, persisted settlement reuse is protected by an integrity envelope so stored settlement payloads can be verified before the relay trusts them.
+* The relay acts as the **authoritative interpreter** of chain-visible data for the shipped public release flow.
+* In `v0.2.1`, release documentation matches the on-demand settlement model rather than the older persisted-settlement design.
 
 ---
 
@@ -14,17 +14,18 @@
 
 ### Block-Based Timing
 
-* 1 Round = **120 blocks**
-* 1 Leg = **1440 blocks**
-* 1 Leg = **12 rounds**
+* 1 Round = **20 blocks**
+* 1 Leg = **120 blocks**
+* 1 Leg = **6 rounds**
 
 ### Derived State
 
 * Current round index is derived from block height
 * Current leg index is derived from block height
 * Round start/end and leg start/end are computed deterministically
+* Browser countdowns may show estimated duration text, but block height remains the only source of truth
 
-No timers, cron jobs, or wall-clock dependencies exist.
+No timers, cron jobs, or wall-clock dependencies exist in the release economy.
 
 ---
 
@@ -32,8 +33,8 @@ No timers, cron jobs, or wall-clock dependencies exist.
 
 ### Round Format
 
-* 10 players per round
-* Top 4 players receive rewards
+* Up to 10 visible leaderboard positions per difficulty are used for settlement consideration
+* Top 4 players in each eligible difficulty receive rewards
 * Bottom 6 players in each independently eligible difficulty are responsible for funding rewards
 
 Settlement qualification is evaluated independently for Easy, Normal, and Hard. If any difficulty reaches the eligibility threshold, settlement is produced and includes winners plus liabilities for each difficulty that qualifies.
@@ -61,7 +62,7 @@ Settlement qualification is evaluated independently for Easy, Normal, and Hard. 
 * 3rd place: **200 ROD**
 * 4th place: **100 ROD**
 
-Easy intentionally uses fractional payouts so the total pot stays exactly 2 ROD while preserving the same proportional split used by Normal.
+Easy intentionally uses fractional payouts so the total pot stays exactly `2 ROD` while preserving the same proportional split used by Normal.
 
 ### Contribution Structure (Bottom 6)
 
@@ -91,51 +92,48 @@ Proportional distribution is identical across all difficulties.
 
 ## On-Chain Data Model
 
-### Leg Records
+### Player-Owned Identity and Score Records
+Store and read:
 
-Store:
+* identity record `p/<handle>`
+* owned score record `g/voidrunner3d/<handle>/record`
+* per-difficulty score payloads for Easy, Normal, and Hard
+* encoded envelope metadata for record verification
 
-* leg id
-* block start
-* block end
-* active status
-
-### Round Records
-
-Store:
+### Derived Round and Leg Concepts
+Derived by the relay from block height:
 
 * round id
 * leg id
 * block start
 * block end
-* status (open / closed / settled)
+* remaining blocks
 
 ### Standings
+Derived from scanned player-owned records:
 
-Store:
-
-* ranked top 10 players
+* ranked top 10 players per difficulty
 * final scores
 * tie resolution outcome
 
-### Settlement Records
-Store:
+### Settlement Views
+Derived on demand:
 
-* winners (top 4) and reward amounts
-* losers (bottom 6) and obligations
-* settlement status (pending / partial / complete)
-* an integrity envelope containing encoded payload, salt, and digest metadata for persisted settlement verification in the shipped `v0.2.0` relay
+* winners (top 4) and reward amounts per eligible difficulty
+* losers (bottom 6) and obligations per eligible difficulty
+* settlement status (`settled` or `closed-no-settlement`)
+* compatibility fields including `qualifiedParticipants` and `qualifiedParticipantsByDifficulty`
+
 ### Player Leg Status
-
-Store:
+Derived on demand:
 
 * unpaid flag
 * blocked status
 * associated leg id
+* aggregated outstanding obligations for the current leg
 
 ### Payment Records
-
-Store:
+Reserved for future direct payment-proof workflows:
 
 * payer
 * required amount
@@ -143,7 +141,7 @@ Store:
 * tx references
 * payment status
 
-All records must be independently reconstructible from chain data.
+All release views must be reconstructible from chain-visible player records plus deterministic relay logic.
 
 ---
 
@@ -151,12 +149,11 @@ All records must be independently reconstructible from chain data.
 
 1. Round is active while block height is within its range
 2. Round closes when block height exceeds round end
-3. Final standings are determined
-4. Settlement record is written on-chain
-5. Player obligations are published
-6. Players settle payments directly
-7. Payment records are written on-chain
-8. Player penalty status is updated if unpaid
+3. Final standings are derived from player-owned records
+4. Settlement view is generated on demand for each independently eligible difficulty
+5. Player obligations are derived from settlement liabilities
+6. Eligibility reflects unresolved same-leg obligations
+7. New leg rollover clears prior-leg blocking automatically
 
 ---
 
@@ -168,15 +165,16 @@ The relay:
 * Derives current round and leg
 * Reads player records
 * Computes leaderboard rankings
-* Exposes round, leg, and settlement state
+* Exposes round, leg, standings, settlement, eligibility, obligations, and recent-settlement views
 * Reuses a shared leaderboard scan when deriving tiered settlements across Easy, Normal, and Hard
-* Validates and writes deterministic on-chain records
+* Validates and writes player-owned score records for submissions
 
 The relay does NOT:
 
-* Store off-chain economy state
-* Maintain hidden state
-* Run scheduled jobs
+* Store hidden off-chain economy truth
+* Maintain a separate prize-window control plane
+* Depend on admin relay writes for public release reads
+* Require persisted settlement records for shipped settlement responses
 
 ---
 
@@ -186,12 +184,13 @@ A player can participate in reward rounds only if:
 
 * Handle is registered
 * Player has no unpaid penalty for the current leg
-* Player meets difficulty requirements
+* Player has a valid player-owned score record
 
 Unpaid players:
 
 * Can still play the game
-* Cannot participate in reward rounds
+* Can still view release state
+* Cannot participate in reward rounds until leg reset or future settlement/payment support clears the debt state
 
 ---
 
@@ -201,11 +200,14 @@ Unpaid players:
 
 * Current round (block-based countdown)
 * Current leg (block-based countdown)
-* Reward distribution
+* Estimated duration text alongside block countdowns
+* Reward distribution summary
 * Tiered Easy/Normal/Hard reward summary sourced from settlement data
 * Player eligibility status
 * Recent settled rounds
-* Improved release board layout for clearer reading in the shipped `v0.2.0` UI
+* Difficulty-aware gameplay/economy mode summary
+* Expandable help for round economy and power-ups
+* Improved release board layout for clearer reading in the shipped `v0.2.1` UI
 
 ### Game Over Screen
 
@@ -213,7 +215,7 @@ Unpaid players:
 * Reward or penalty outcome
 * Outstanding obligations (if any)
 * Penalty/block status
-* Time until next leg reset (in blocks)
+* Time until next leg reset in blocks with estimated duration text
 * Tiered Easy/Normal/Hard reward summary sourced from settlement data
 * Difficulty-aware featured chart title and payload matching the active run difficulty
 * Expandable details sections so additional release context stays available without crowding the default summary
@@ -222,43 +224,48 @@ Unpaid players:
 
 * No reward UI elements shown
 * Gameplay remains clean and uninterrupted
-* The active registered handle can stay visible through the player badge in the corner controls
+* The active registered handle stays visible through the player badge in the corner controls
+* The shipped browser client also exposes a centered project repository footer link outside the active gameplay HUD
 
 ---
 
 ## Trust and Transparency
 
 * All rounds are derived from block height
-* All results are stored on-chain
-* All payments are publicly verifiable
-* All penalties are publicly visible
+* All standings are derived from player-owned chain records
+* All visible payout/liability rules are deterministic and documented
+* All penalties are publicly derivable from settlement liabilities
 
-The system is fully auditable without relying on any centralized authority.
+The system is auditable without relying on a hidden admin authority.
 
 ---
 
 ## Edge Case Handling
 
-* Relay restart: state reconstructed from chain
-* Partial payments: tracked and reflected in player status
+* Relay restart: state reconstructed from chain-visible player records
+* Missing settlement participants: returns `closed-no-settlement`
 * Ties: resolved deterministically
-* Missing submissions: treated as lowest rank
+* Missing submissions: treated as absent from standings
 * Leg rollover: clears penalties automatically
-* Duplicate or invalid payment proofs: ignored or rejected
+* Integrity warning mode: relay becomes read-only for mutating requests
+* Relay offline in browser: UI falls back to unavailable messaging without breaking gameplay
 
-Optional:
+Optional future extension:
 
-* Settlement confirmation buffer (N blocks) before finalization
+* Settlement confirmation buffer before finalization
+* Direct on-chain payment proof handling
 
 ---
 
 ## Validation Requirements
 
 * Verify correct round and leg derivation from block height
-* Verify settlement correctness across multiple rounds
+* Verify settlement correctness across multiple difficulties
+* Verify payout/liability totals remain balanced per difficulty
 * Verify penalty assignment and clearing at leg boundaries
 * Verify player eligibility logic
-* Verify full system reconstruction from on-chain data only
+* Verify full system reconstruction from on-chain player records and deterministic relay logic only
+* Verify browser countdown text remains aligned with authoritative block-derived remaining counts
 
 ---
 
@@ -276,9 +283,10 @@ This notification layer must remain secondary to the authoritative relay model a
 
 ## Outcome
 
-A deterministic, block-based, on-chain reward system where:
+A deterministic, block-based release system where:
 
 * Rounds and legs are automatically governed by the blockchain
-* Rewards and penalties are transparent and verifiable
-* No admin intervention is required
-* The system is simple, scalable, and fully aligned with the game loop
+* Rewards and liabilities are transparent and verifiable
+* No admin intervention is required for public release views
+* The relay remains the authoritative interpreter for the shipped browser experience
+* The system stays simple, scalable, and tightly aligned with the game loop
