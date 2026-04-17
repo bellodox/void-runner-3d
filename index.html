@@ -200,6 +200,24 @@
       text-transform: uppercase;
       user-select: none;
       border-bottom: 1px solid rgba(121, 215, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .overlay-section-details summary::after {
+      content: "▾";
+      font-size: 0.95rem;
+      color: #9cc8e2;
+      transform: rotate(-90deg);
+      transition: transform 0.2s ease, color 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .overlay-section-details[open] summary::after {
+      transform: rotate(0deg);
+      color: #dcefff;
     }
 
     .overlay-section-details summary::-webkit-details-marker {
@@ -731,6 +749,7 @@
           <p id="menuLegCountdownText">Leg countdown: loading...</p>
           <p id="menuEligibilityText">Eligibility: enter or register a handle to view status.</p>
           <p id="menuRewardSummaryText">Reward distribution: loading...</p>
+          <p id="menuTieredRewardsText">Tiered rewards: loading...</p>
         </div>
       </div>
 
@@ -764,7 +783,7 @@
       <p id="gameOverRelayModeText" class="relay-mode-pill" aria-live="polite"><span class="relay-mode-dot" aria-hidden="true"></span><span id="gameOverRelayModeTextValue">Relay mode: checking...</span></p>
 
       <div class="featured-rank-board" aria-live="polite">
-        <h2>Featured Chart (Normal) Top 5</h2>
+        <h2 id="featuredRankTitle">Featured Chart (Normal) Top 5</h2>
         <ol id="featuredRankList" class="featured-rank-list"></ol>
         <p id="featuredRankContextText" class="featured-rank-context">Loading featured rank...</p>
         <p id="featuredRankDeltaText" class="featured-rank-delta">&nbsp;</p>
@@ -777,6 +796,7 @@
           <div class="release-board-grid">
             <p id="gameOverPlacementText">Current round placement: loading...</p>
             <p id="gameOverOutcomeText">Reward/liability outcome: loading...</p>
+            <p id="gameOverTieredRewardsText">Tiered rewards: loading...</p>
             <p id="gameOverObligationsText">Outstanding obligations: loading...</p>
             <p id="gameOverBlockedText">Eligibility gate: loading...</p>
             <p id="gameOverLegResetText">Next leg reset in blocks: loading...</p>
@@ -865,18 +885,22 @@
       const menuLegCountdownText = document.getElementById("menuLegCountdownText");
       const menuEligibilityText = document.getElementById("menuEligibilityText");
       const menuRewardSummaryText = document.getElementById("menuRewardSummaryText");
+      const menuTieredRewardsText = document.getElementById("menuTieredRewardsText");
       const recentSettledRoundsStatusText = document.getElementById("recentSettledRoundsStatusText");
       const recentSettledRoundsList = document.getElementById("recentSettledRoundsList");
       const gameOverPlacementText = document.getElementById("gameOverPlacementText");
       const gameOverOutcomeText = document.getElementById("gameOverOutcomeText");
+      const gameOverTieredRewardsText = document.getElementById("gameOverTieredRewardsText");
       const gameOverObligationsText = document.getElementById("gameOverObligationsText");
       const gameOverBlockedText = document.getElementById("gameOverBlockedText");
       const gameOverLegResetText = document.getElementById("gameOverLegResetText");
       const featuredRankList = document.getElementById("featuredRankList");
+      const featuredRankTitle = document.getElementById("featuredRankTitle");
       const featuredRankContextText = document.getElementById("featuredRankContextText");
       const featuredRankDeltaText = document.getElementById("featuredRankDeltaText");
 
       const RELAY_BASE_URL = "http://127.0.0.1:8787/api";
+      const FEATURED_LEADERBOARD_DIFFICULTY = "normal";
       const PLAYER_HANDLE_STORAGE_KEY = "voidrunner_player_handle";
       const allowedDifficultyKeys = new Set(["easy", "normal", "hard"]);
       const RECENT_WINNERS_PRIZE_TYPES = Object.freeze(["hourly", "daily", "weekly"]);
@@ -1586,12 +1610,55 @@
         return `Reward distribution: ${winners.length} winners (${winnerTotal}) · ${liabilities.length} liabilities (${liabilityTotal})`;
       }
 
+      function summarizeTieredRewards(settlementPayload) {
+        if (!settlementPayload) return "Tiered rewards: settlement unavailable";
+
+        const winners = Array.isArray(settlementPayload.winners) ? settlementPayload.winners : [];
+        if (!winners.length) return "Tiered rewards: no winners in this settlement";
+
+        const winnersByDifficulty = {
+          easy: [],
+          normal: [],
+          hard: [],
+          unspecified: []
+        };
+
+        for (const winnerEntry of winners) {
+          const difficultyKey = typeof winnerEntry?.difficulty === "string" ? winnerEntry.difficulty.toLowerCase() : "";
+          if (difficultyKey === "easy" || difficultyKey === "normal" || difficultyKey === "hard") {
+            winnersByDifficulty[difficultyKey].push(winnerEntry);
+          } else {
+            winnersByDifficulty.unspecified.push(winnerEntry);
+          }
+        }
+
+        const summaryParts = [];
+        for (const difficultyKey of ["easy", "normal", "hard"]) {
+          const difficultyWinners = winnersByDifficulty[difficultyKey];
+          if (!difficultyWinners.length) continue;
+          const rewardTotal = difficultyWinners.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+          summaryParts.push(`${DIFFICULTY[difficultyKey].label}: ${difficultyWinners.length} winners (${rewardTotal})`);
+        }
+
+        if (winnersByDifficulty.unspecified.length) {
+          const unspecifiedRewardTotal = winnersByDifficulty.unspecified.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+          summaryParts.push(`Legacy: ${winnersByDifficulty.unspecified.length} winners (${unspecifiedRewardTotal})`);
+        }
+
+        if (!summaryParts.length) {
+          return "Tiered rewards: settlement winners available but difficulty tiers unavailable";
+        }
+
+        return `Tiered rewards: ${summaryParts.join(" · ")}`;
+      }
+
       async function loadReleaseOverview() {
         setReleaseText(menuCurrentRoundText, "Round: loading...", "#9cc8e2");
         setReleaseText(menuRoundCountdownText, "Round ends: loading...", "#9cc8e2");
         setReleaseText(menuCurrentLegText, "Leg: loading...", "#9cc8e2");
         setReleaseText(menuLegCountdownText, "Leg ends: loading...", "#9cc8e2");
         setReleaseText(menuRewardSummaryText, "Round distribution: loading...", "#9cc8e2");
+        setReleaseText(menuTieredRewardsText, "Tiered rewards: loading...", "#9cc8e2");
         setRecentSettledStatus("Loading recent settlements...", "#9cc8e2");
         renderRecentSettledRounds([]);
 
@@ -1629,6 +1696,7 @@
           setReleaseText(menuCurrentLegText, `Leg #${leg?.id ?? "--"} · ${formatBlockRange(leg?.blockStart, leg?.blockEnd)}`, "#dcefff");
           setReleaseText(menuLegCountdownText, `Leg ends: ${formatBlocksRemaining(leg?.blocksRemaining)}`, "#dcefff");
           setReleaseText(menuRewardSummaryText, summarizeDistribution(settlement).replace("Reward distribution: ", "Round distribution: "), "#dcefff");
+          setReleaseText(menuTieredRewardsText, summarizeTieredRewards(settlement), "#dcefff");
 
           if (eligibility) {
             const eligibilityLabel = eligibility.eligible
@@ -1645,6 +1713,7 @@
           setReleaseText(menuCurrentLegText, "Leg: relay offline", "#ffb0b0");
           setReleaseText(menuLegCountdownText, "Leg ends: unavailable", "#ffb0b0");
           setReleaseText(menuRewardSummaryText, "Round distribution: unavailable", "#ffb0b0");
+          setReleaseText(menuTieredRewardsText, "Tiered rewards: unavailable", "#ffb0b0");
           if (activeHandle) {
             setReleaseText(menuEligibilityText, `Eligibility: unavailable for ${activeHandle}`, "#ffb0b0");
           }
@@ -1656,6 +1725,7 @@
       async function loadGameOverReleaseSummary() {
         setReleaseText(gameOverPlacementText, "Placement now: loading...", "#9cc8e2");
         setReleaseText(gameOverOutcomeText, "Outcome: loading...", "#9cc8e2");
+        setReleaseText(gameOverTieredRewardsText, "Tiered rewards: loading...", "#9cc8e2");
         setReleaseText(gameOverObligationsText, "Obligations: loading...", "#9cc8e2");
         setReleaseText(gameOverBlockedText, "Eligibility: loading...", "#9cc8e2");
         setReleaseText(gameOverLegResetText, "Leg reset: loading...", "#9cc8e2");
@@ -1712,6 +1782,8 @@
             setReleaseText(gameOverOutcomeText, "Outcome: unavailable", "#a6c6dd");
           }
 
+          setReleaseText(gameOverTieredRewardsText, summarizeTieredRewards(settlement), "#dcefff");
+
           const outstanding = Array.isArray(obligations?.outstanding) ? obligations.outstanding : [];
           if (!handle) {
             setReleaseText(gameOverObligationsText, "Obligations: register a handle to view details", "#a6c6dd");
@@ -1736,6 +1808,7 @@
         } catch {
           setReleaseText(gameOverPlacementText, "Placement now: unavailable", "#ffb0b0");
           setReleaseText(gameOverOutcomeText, "Outcome: unavailable", "#ffb0b0");
+          setReleaseText(gameOverTieredRewardsText, "Tiered rewards: unavailable", "#ffb0b0");
           setReleaseText(gameOverObligationsText, "Obligations: unavailable", "#ffb0b0");
           setReleaseText(gameOverBlockedText, "Eligibility: unavailable", "#ffb0b0");
           setReleaseText(gameOverLegResetText, "Leg reset: unavailable", "#ffb0b0");
@@ -1828,6 +1901,63 @@
         featuredRankDeltaText.style.color = color;
       }
 
+      function updateFeaturedRankTitle(difficultyKey) {
+        if (!featuredRankTitle) return;
+        const normalizedDifficulty = allowedDifficultyKeys.has(difficultyKey) ? difficultyKey : selectedDifficulty;
+        const difficultyLabel = DIFFICULTY[normalizedDifficulty] ? DIFFICULTY[normalizedDifficulty].label : String(normalizedDifficulty || "normal").toUpperCase();
+        featuredRankTitle.textContent = `Featured Chart (${difficultyLabel}) Top 5`;
+      }
+
+      function buildFeaturedRankPayloadFromLeaderboard(handle, difficulty) {
+        const topEntries = chainEntries.slice(0, 10).map((entry) => ({
+          rank: Number(entry.rank),
+          handle: entry.handle || entry.name || "--",
+          score: Number(entry.score)
+        }));
+
+        const leaderboardPlayerEntry = topEntries.find((entry) => entry.handle === handle) || null;
+        const persistedDifficultyScore = registeredPlayerScores && registeredPlayerScores[difficulty] && Number.isFinite(registeredPlayerScores[difficulty].score)
+          ? registeredPlayerScores[difficulty].score
+          : null;
+        const playerScore = leaderboardPlayerEntry && Number.isFinite(leaderboardPlayerEntry.score)
+          ? leaderboardPlayerEntry.score
+          : persistedDifficultyScore;
+
+        const playerRank = leaderboardPlayerEntry && Number.isFinite(leaderboardPlayerEntry.rank)
+          ? leaderboardPlayerEntry.rank
+          : null;
+        const leaderEntry = topEntries.length ? topEntries[0] : null;
+        const nextRankEntry = playerRank && playerRank > 1 ? topEntries.find((entry) => entry.rank === playerRank - 1) || null : null;
+        const toLeader = leaderEntry && Number.isFinite(playerScore) ? roundScoreDelta(leaderEntry.score - playerScore) : null;
+        const toNextRank = nextRankEntry && Number.isFinite(playerScore) ? roundScoreDelta(nextRankEntry.score - playerScore) : null;
+        const topListCutoff = topEntries.length === 10 ? topEntries[9] : null;
+        const toTopList = !playerRank && topListCutoff && Number.isFinite(playerScore)
+          ? roundScoreDelta(topListCutoff.score - playerScore)
+          : null;
+
+        return {
+          ok: true,
+          featuredDifficulty: difficulty,
+          player: {
+            handle,
+            rank: playerRank,
+            score: playerScore,
+            inTopList: playerRank !== null && playerRank <= 10
+          },
+          top: topEntries,
+          targets: {
+            leader: leaderEntry,
+            next: nextRankEntry,
+            topListCutoff: topListCutoff
+          },
+          deltas: {
+            toLeader,
+            toNextRank,
+            toTopList
+          }
+        };
+      }
+
       function getFeaturedDeltaMessage(rankPayload) {
         const payloadDeltas = rankPayload && typeof rankPayload.deltas === "object" ? rankPayload.deltas : null;
         const payloadTargets = rankPayload && typeof rankPayload.targets === "object" ? rankPayload.targets : null;
@@ -1848,10 +1978,18 @@
           return `Need ${formatTime(toTopList)} to enter top 10`;
         }
 
-        return "Set a normal run to get featured-chart rank context.";
+        const payloadDifficulty = featuredRankPayload && typeof featuredRankPayload.featuredDifficulty === "string"
+          ? featuredRankPayload.featuredDifficulty.toLowerCase()
+          : selectedDifficulty;
+        const difficultyLabel = DIFFICULTY[payloadDifficulty] ? DIFFICULTY[payloadDifficulty].label : String(payloadDifficulty || "").toUpperCase();
+        return `Set a ${difficultyLabel} run to get featured-chart rank context.`;
       }
 
       function renderFeaturedRankBoard() {
+        const payloadDifficulty = featuredRankPayload && typeof featuredRankPayload.featuredDifficulty === "string"
+          ? featuredRankPayload.featuredDifficulty.toLowerCase()
+          : selectedDifficulty;
+        updateFeaturedRankTitle(payloadDifficulty);
         featuredRankList.innerHTML = "";
         const payloadTop = featuredRankPayload && Array.isArray(featuredRankPayload.top) ? featuredRankPayload.top : [];
         const topFiveEntries = payloadTop.slice(0, 5);
@@ -1888,10 +2026,16 @@
       }
 
       async function loadFeaturedRankContext() {
+        const activeDifficulty = allowedDifficultyKeys.has(selectedDifficulty) ? selectedDifficulty : "normal";
         const handle = sanitizeHandle(playerInitialsInput.value) || registeredPlayerHandle || readStoredHandle();
 
         if (!handle) {
-          featuredRankPayload = { top: [], player: { rank: null, score: null }, deltas: {} };
+          featuredRankPayload = {
+            top: [],
+            player: { rank: null, score: null },
+            deltas: {},
+            featuredDifficulty: activeDifficulty
+          };
           renderFeaturedRankBoard();
           return;
         }
@@ -1899,13 +2043,25 @@
         setFeaturedRankContextText("Loading featured rank...", "#9cc8e2");
         setFeaturedRankDeltaText(" ", "#dcefff");
 
+        if (activeDifficulty !== FEATURED_LEADERBOARD_DIFFICULTY) {
+          featuredRankPayload = buildFeaturedRankPayloadFromLeaderboard(handle, activeDifficulty);
+          renderFeaturedRankBoard();
+          return;
+        }
+
         try {
           const response = await fetch(`${RELAY_BASE_URL}/leaderboard/rank?handle=${encodeURIComponent(handle)}`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           featuredRankPayload = await response.json();
+          if (!featuredRankPayload || typeof featuredRankPayload !== "object") {
+            featuredRankPayload = buildFeaturedRankPayloadFromLeaderboard(handle, activeDifficulty);
+          }
+          if (typeof featuredRankPayload.featuredDifficulty !== "string") {
+            featuredRankPayload.featuredDifficulty = activeDifficulty;
+          }
           renderFeaturedRankBoard();
         } catch {
-          featuredRankPayload = { top: [], player: { rank: null, score: null }, deltas: {} };
+          featuredRankPayload = buildFeaturedRankPayloadFromLeaderboard(handle, activeDifficulty);
           renderFeaturedRankBoard();
           setFeaturedRankContextText("Featured rank unavailable (relay offline).", "#ffb0b0");
           setFeaturedRankDeltaText(" ", "#dcefff");
@@ -1933,6 +2089,9 @@
 
         if (requestSequence !== leaderboardRequestSequence || requestedDifficulty !== selectedDifficulty) return;
         renderChainLeaderboard();
+        if (!gameOverOverlay.classList.contains("hidden")) {
+          loadFeaturedRankContext();
+        }
       }
 
       async function refreshPlayerStatus() {

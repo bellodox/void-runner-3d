@@ -204,7 +204,7 @@ async function runTests() {
     const summaryText = await page.textContent("#menuRewardSummaryText");
     assert(
       "menu reward distribution summary is explicit",
-      summaryText && summaryText.includes("Reward distribution"),
+      summaryText && summaryText.includes("Round distribution"),
       `text="${summaryText}"`
     );
   }
@@ -212,7 +212,7 @@ async function runTests() {
     const countdownText = await page.textContent("#menuRoundCountdownText");
     assert(
       "menu round countdown line is visible in release menu",
-      countdownText && countdownText.includes("Round countdown"),
+      countdownText && countdownText.includes("Round ends"),
       `text="${countdownText}"`
     );
   }
@@ -220,8 +220,16 @@ async function runTests() {
     const legCountdownText = await page.textContent("#menuLegCountdownText");
     assert(
       "menu leg countdown line is visible in release menu",
-      legCountdownText && legCountdownText.includes("Leg countdown"),
+      legCountdownText && legCountdownText.includes("Leg ends"),
       `text="${legCountdownText}"`
+    );
+  }
+  {
+    const tieredRewardsText = await page.textContent("#menuTieredRewardsText");
+    assert(
+      "menu tiered rewards line is visible in release menu",
+      tieredRewardsText && tieredRewardsText.includes("Tiered rewards"),
+      `text="${tieredRewardsText}"`
     );
   }
   {
@@ -551,10 +559,21 @@ async function runTests() {
     assert("game-over release outcome board is visible", gameOverReleaseBoardVisible === 1, `count=${gameOverReleaseBoardVisible}`);
 
     const gameOverBlockedText = await page.textContent("#gameOverBlockedText");
-    assert("game-over blocked/unpaid messaging field exists", gameOverBlockedText && gameOverBlockedText.includes("Eligibility gate"), `text="${gameOverBlockedText}"`);
+    assert(
+      "game-over blocked/unpaid messaging field exists",
+      gameOverBlockedText && gameOverBlockedText.includes("Eligibility"),
+      `text="${gameOverBlockedText}"`
+    );
 
     const featuredRowsCount = await page.locator("#featuredRankList li").count();
     assert("featured chart renders compact top-5 rows", featuredRowsCount === 5, `count=${featuredRowsCount}`);
+
+    const featuredTitleNormal = await page.textContent("#featuredRankTitle");
+    assert(
+      "featured chart title shows current Normal difficulty on game-over screen",
+      featuredTitleNormal && featuredTitleNormal.includes("(NORMAL)"),
+      `text="${featuredTitleNormal}"`
+    );
 
     const featuredLeaderText = await page.locator("#featuredRankList li").first().textContent();
     assert("featured chart highlights #1 leader row label", featuredLeaderText && featuredLeaderText.includes("LEADER"), `text="${featuredLeaderText}"`);
@@ -585,19 +604,39 @@ async function runTests() {
 
   {
     const gameOverPlacementText = await page.textContent("#gameOverPlacementText");
-    assert("game-over placement release field exists", gameOverPlacementText && gameOverPlacementText.includes("Current round placement"), `text="${gameOverPlacementText}"`);
+    assert(
+      "game-over placement release field exists",
+      gameOverPlacementText && (gameOverPlacementText.includes("Placement") || gameOverPlacementText.includes("Current round placement")),
+      `text="${gameOverPlacementText}"`
+    );
   }
   {
     const gameOverOutcomeText = await page.textContent("#gameOverOutcomeText");
-    assert("game-over reward or liability field exists", gameOverOutcomeText && gameOverOutcomeText.includes("Reward/liability outcome"), `text="${gameOverOutcomeText}"`);
+    assert(
+      "game-over reward or liability field exists",
+      gameOverOutcomeText && (gameOverOutcomeText.includes("Outcome") || gameOverOutcomeText.includes("Reward/liability outcome")),
+      `text="${gameOverOutcomeText}"`
+    );
+  }
+  {
+    const gameOverTieredRewardsText = await page.textContent("#gameOverTieredRewardsText");
+    assert("game-over tiered rewards field exists", gameOverTieredRewardsText && gameOverTieredRewardsText.includes("Tiered rewards"), `text="${gameOverTieredRewardsText}"`);
   }
   {
     const gameOverObligationsText = await page.textContent("#gameOverObligationsText");
-    assert("game-over obligations field exists", gameOverObligationsText && gameOverObligationsText.includes("Outstanding obligations"), `text="${gameOverObligationsText}"`);
+    assert(
+      "game-over obligations field exists",
+      gameOverObligationsText && (gameOverObligationsText.includes("Obligations") || gameOverObligationsText.includes("Outstanding obligations")),
+      `text="${gameOverObligationsText}"`
+    );
   }
   {
     const gameOverLegResetText = await page.textContent("#gameOverLegResetText");
-    assert("game-over leg reset field exists", gameOverLegResetText && gameOverLegResetText.includes("Next leg reset in blocks"), `text="${gameOverLegResetText}"`);
+    assert(
+      "game-over leg reset field exists",
+      gameOverLegResetText && (gameOverLegResetText.includes("Leg reset") || gameOverLegResetText.includes("Next leg reset in blocks")),
+      `text="${gameOverLegResetText}"`
+    );
   }
 
   // ---- Game-over score breakdown ----
