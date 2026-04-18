@@ -1004,6 +1004,9 @@
       };
       let featuredRankPayload = null;
       let leaderboardRequestSequence = 0;
+      let featuredRankRequestSequence = 0;
+      let releaseOverviewRequestSequence = 0;
+      let playerStatusRequestSequence = 0;
 
       function formatBlockRange(blockStart, blockEnd) {
         if (!Number.isInteger(blockStart) || !Number.isInteger(blockEnd)) return "--";
@@ -1764,6 +1767,7 @@
       }
 
       async function loadReleaseOverview() {
+        const requestSequence = ++releaseOverviewRequestSequence;
         setReleaseText(menuCurrentRoundText, "Round: loading...", "#9cc8e2");
         setReleaseText(menuRoundCountdownText, "Round ends: loading...", "#9cc8e2");
         setReleaseText(menuCurrentLegText, "Leg: loading...", "#9cc8e2");
@@ -1799,6 +1803,8 @@
           const recentRounds = recentRoundsPayload && Array.isArray(recentRoundsPayload.rounds) ? recentRoundsPayload.rounds : [];
           const eligibility = eligibilityPayload && eligibilityPayload.eligibility ? eligibilityPayload.eligibility : null;
 
+          if (requestSequence !== releaseOverviewRequestSequence) return;
+
           const hasAnyReleaseData = Boolean(round || leg || settlement || recentRounds.length || eligibility);
           if (!hasAnyReleaseData) throw new Error("No release data available");
 
@@ -1819,6 +1825,7 @@
           setRecentSettledStatus(`${recentRounds.length} settled rounds loaded`, "#65f5a8");
           renderRecentSettledRounds(recentRounds);
         } catch {
+          if (requestSequence !== releaseOverviewRequestSequence) return;
           setReleaseText(menuCurrentRoundText, "Round: relay offline", "#ffb0b0");
           setReleaseText(menuRoundCountdownText, "Round ends: unavailable", "#ffb0b0");
           setReleaseText(menuCurrentLegText, "Leg: relay offline", "#ffb0b0");
@@ -2007,6 +2014,11 @@
         featuredRankContextText.style.color = color;
       }
 
+      function roundScoreDelta(value) {
+        if (!Number.isFinite(value)) return null;
+        return Math.round(value * 1000) / 1000;
+      }
+
       function formatModeAmounts(values) {
         if (!Array.isArray(values)) return "--";
         return values.map((value) => Number(value).toString()).join(" / ");
@@ -2094,7 +2106,9 @@
         const toLeader = payloadDeltas && Number.isFinite(payloadDeltas.toLeader) ? payloadDeltas.toLeader : null;
         const toNextRank = payloadDeltas && Number.isFinite(payloadDeltas.toNextRank) ? payloadDeltas.toNextRank : null;
         const toTopList = payloadDeltas && Number.isFinite(payloadDeltas.toTopList) ? payloadDeltas.toTopList : null;
-        const nextTarget = payloadTargets && payloadTargets.next ? payloadTargets.next : null;
+        const nextTarget = payloadTargets
+          ? (payloadTargets.next || payloadTargets.nextRank || null)
+          : null;
 
         if (toLeader !== null) {
           return `Distance to #1: ${formatTime(toLeader)}`;
@@ -2156,10 +2170,12 @@
       }
 
       async function loadFeaturedRankContext() {
+        const requestSequence = ++featuredRankRequestSequence;
         const activeDifficulty = allowedDifficultyKeys.has(selectedDifficulty) ? selectedDifficulty : "normal";
         const handle = sanitizeHandle(playerInitialsInput.value) || registeredPlayerHandle || readStoredHandle();
 
         if (!handle) {
+          if (requestSequence !== featuredRankRequestSequence) return;
           featuredRankPayload = {
             top: [],
             player: { rank: null, score: null },
@@ -2174,6 +2190,7 @@
         setFeaturedRankDeltaText(" ", "#dcefff");
 
         if (activeDifficulty !== FEATURED_LEADERBOARD_DIFFICULTY) {
+          if (requestSequence !== featuredRankRequestSequence) return;
           featuredRankPayload = buildFeaturedRankPayloadFromLeaderboard(handle, activeDifficulty);
           renderFeaturedRankBoard();
           return;
@@ -2182,15 +2199,19 @@
         try {
           const response = await fetch(`${RELAY_BASE_URL}/leaderboard/rank?handle=${encodeURIComponent(handle)}`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          if (requestSequence !== featuredRankRequestSequence) return;
           featuredRankPayload = await response.json();
+          if (requestSequence !== featuredRankRequestSequence) return;
           if (!featuredRankPayload || typeof featuredRankPayload !== "object") {
             featuredRankPayload = buildFeaturedRankPayloadFromLeaderboard(handle, activeDifficulty);
           }
           if (typeof featuredRankPayload.featuredDifficulty !== "string") {
             featuredRankPayload.featuredDifficulty = activeDifficulty;
           }
+          if (requestSequence !== featuredRankRequestSequence) return;
           renderFeaturedRankBoard();
         } catch {
+          if (requestSequence !== featuredRankRequestSequence) return;
           featuredRankPayload = buildFeaturedRankPayloadFromLeaderboard(handle, activeDifficulty);
           renderFeaturedRankBoard();
           setFeaturedRankContextText("Featured rank unavailable (relay offline).", "#ffb0b0");
@@ -2225,8 +2246,10 @@
       }
 
       async function refreshPlayerStatus() {
+        const requestSequence = ++playerStatusRequestSequence;
         const handle = sanitizeHandle(playerInitialsInput.value);
         if (!handle) {
+          if (requestSequence !== playerStatusRequestSequence) return;
           clearAllRegisteredPlayerState();
           playerInitialsInput.value = "";
           playerInitialsInput.disabled = false;
@@ -2246,6 +2269,7 @@
           const response = await fetch(`${RELAY_BASE_URL}/player/status?handle=${encodeURIComponent(handle)}`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const payload = await response.json();
+          if (requestSequence !== playerStatusRequestSequence) return;
           const player = payload && payload.player ? payload.player : null;
           applyPlayerStatus(player);
 
@@ -2257,6 +2281,7 @@
           updateCornerPlayerName();
           loadFeaturedRankContext();
         } catch {
+          if (requestSequence !== playerStatusRequestSequence) return;
           registeredPlayerHandle = "";
           registeredPlayerScores = {
             easy: null,

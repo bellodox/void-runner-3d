@@ -114,6 +114,8 @@ The menu also shows recent settled rounds in [`index.html`](index.html:801), a d
 
 Release overview data is loaded by [`loadReleaseOverview()`](index.html:1766), while block countdown formatting now includes estimated durations through [`formatBlocksRemaining()`](index.html:1032).
 
+The browser now also guards the menu release overview against stale async updates through the request sequencing inside [`loadReleaseOverview()`](index.html:1767), so older eligibility and settlement responses cannot overwrite a newer handle state.
+
 ### Game-over overlay
 The game-over panel shows release outcome data in [`index.html`](index.html:834):
 - current round placement
@@ -126,6 +128,8 @@ The game-over panel shows release outcome data in [`index.html`](index.html:834)
 - expandable details sections for inspecting release summary data with less default clutter
 
 That state is loaded through [`loadGameOverReleaseSummary()`](index.html:1836).
+
+Featured-rank state is loaded through [`loadFeaturedRankContext()`](index.html:2170). In the current runtime, that flow now discards stale async responses, keeps local difficulty fallback payload generation available through [`buildFeaturedRankPayloadFromLeaderboard()`](index.html:2047) plus the browser-side [`roundScoreDelta()`](index.html:2014) helper, and accepts both `targets.next` and `targets.nextRank` payload shapes in [`getFeaturedDeltaMessage()`](index.html:2092).
 
 ### Gameplay HUD
 The active-run HUD remains focused on gameplay only in [`index.html`](index.html:753):
@@ -147,6 +151,8 @@ The browser client keeps the shipped registration and player-owned submission wo
 - project repository footer link in [`index.html`](index.html:886)
 
 Registered handles are locked in the UI after successful registration in [`applyPlayerStatus()`](index.html:1929).
+
+The browser-side player-status refresh now uses request sequencing in [`refreshPlayerStatus()`](index.html:2246) so late `/api/player/status` responses cannot restore outdated lock, registration, or submit-button state after the player changes handle context.
 
 ## Diagnostics-only admin relay
 

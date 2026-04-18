@@ -5,6 +5,12 @@
 ### Planned
 - Added a documentation todo for Nostr-based notifications covering new-leg start alerts, beaten-record alerts, and bottom-of-leaderboard alerts in [`doc/sprint-map.md`](doc/sprint-map.md).
 
+### Fixed
+- Hardened the browser featured-rank and player/release status flows in [`index.html`](index.html) by adding request-sequence guards to [`loadFeaturedRankContext()`](index.html:2170), [`refreshPlayerStatus()`](index.html:2246), and [`loadReleaseOverview()`](index.html:1767), preventing stale async responses from overwriting newer UI state.
+- Added the missing browser-side [`roundScoreDelta()`](index.html:2014) helper so difficulty-local featured-rank fallback payloads for Easy/Hard and relay-offline scenarios no longer depend on a server-only helper.
+- Aligned featured-rank payload compatibility in [`getFeaturedDeltaMessage()`](index.html:2092) so the client accepts both legacy `targets.next` and relay-native `targets.nextRank` payload shapes.
+- Updated [`game.test.js`](game.test.js) mock payload coverage to use the relay-realistic `nextRank` field for featured-rank target data.
+
 ## [0.2.1] - 2026-04-17
 
 ### Release economy

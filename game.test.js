@@ -88,7 +88,7 @@ async function runTests() {
         ],
         targets: {
           leader: { rank: 1, handle: "champ", score: 40 },
-          next: { rank: 2, handle: "rival", score: 36 }
+          nextRank: { rank: 2, handle: "rival", score: 36 }
         },
         deltas: {
           toLeader: 7,
