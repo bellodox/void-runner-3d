@@ -12,8 +12,8 @@ The shipped `v0.2.1` runtime keeps the `v0.2.0` release-track model and folds in
 ### Deterministic rounds and legs
 The release economy is derived from block height in [`leaderboard-relay.js`](leaderboard-relay.js:57):
 - release namespace: `g/voidrunner3d/release/v1/`
-- round size: 20 blocks
-- leg size: 120 blocks
+- round size: 20 blocks (~10 minutes at 30s/block)
+- leg size: 120 blocks (~60 minutes at 30s/block)
 - rounds per leg: 6
 - featured release difficulty: Normal
 

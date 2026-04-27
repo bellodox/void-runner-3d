@@ -1,8 +1,8 @@
 ## Sprint 0 — Freeze rules
 
-* Lock round size to **120 blocks**
-* Lock leg size to **1440 blocks**
-* Lock **12 rounds per leg**
+* Lock round size to **20 blocks**
+* Lock leg size to **120 blocks**
+* Lock **6 rounds per leg**
 * Lock payout to **100 / 70 / 20 / 10**
 * Lock bottom-6 liabilities to **28 / 30 / 33 / 35 / 36 / 38**
 * Lock penalty rule: unpaid players are blocked **until leg end**

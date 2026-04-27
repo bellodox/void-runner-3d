@@ -14,8 +14,8 @@
 
 ### Block-Based Timing
 
-* 1 Round = **20 blocks**
-* 1 Leg = **120 blocks**
+* 1 Round = **20 blocks** (~10 minutes at 30s/block)
+* 1 Leg = **120 blocks** (~60 minutes at 30s/block)
 * 1 Leg = **6 rounds**
 
 ### Derived State
